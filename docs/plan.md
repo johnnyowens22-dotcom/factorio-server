@@ -59,7 +59,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 | FG3 | The server won't restart for an update while anyone is online. | By design. It updates on the first check with 0 players. |
 | FG4 | 04:30 auto-reboots (only when an update needs one) drop players for a few minutes. | Accepted. The server returns on its own with the last autosave (every 10 min). |
 | FG5 | At home, the public hostname may not work (NAT loopback on the R8000 is untested). | At home, connect to `192.168.1.33`. |
-| FG6 | `qBittorrent` saturating the Comcast upload causes lag in the game. | If it happens, cap qBittorrent's upload (media-server change, by agreement). |
+| FG6 | `qBittorrent` saturating the Comcast upload causes lag in the game (measured 2026-10-07: jitter 33 ms, spikes to 141 ms at its 2.5 MiB/s cap). | **Done:** streambox D58 caps torrent upload at 1 MiB/s (jitter 1.7 ms, worst 20 ms). If lag returns, check the upload first. |
 | FG7 | Re-running `install.sh` restarts the account's Docker daemon, which restarts the server. | Run it when nobody is playing. |
 | FG8 | The game folder belongs to the container's subuid, so the `factorio` account can read but not edit it. | Saves/mods go in through `install.sh import`. |
 | FG9 | `secrets.env` is a plain env file: no quotes, no comments after a value, password letters/digits only. | `factorio-settings` refuses a weak or symbol-containing password. |
