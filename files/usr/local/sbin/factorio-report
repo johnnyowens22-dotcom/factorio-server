@@ -1,0 +1,154 @@
+#!/usr/bin/python3 -I
+"""Factorio security report (docs/plan.md, F11). Run as: sudo factorio-report
+
+Who has ever joined, who was refused (grouped by IP/name/reason), the isolation firewall's counters with a
+verdict, whether the DNS record points home, and the newest backup. Read-only.
+"""
+import collections, datetime, json, os, pwd, re, subprocess, sys, urllib.request
+
+USER = "factorio"
+HOSTNAME = "factorio.howoldismoose.com"
+BOLD, RED, YEL, GRN, END = ("\033[1m", "\033[31m", "\033[33m", "\033[32m", "\033[0m") if sys.stdout.isatty() else ("",) * 5
+
+REASONS = {
+    "PasswordMissing": "no password entered",
+    "PasswordMismatch": "WRONG password",
+    "UserVerificationMissing": "not logged into factorio.com in the game",
+    "UserVerificationFailed": "factorio.com login check failed",
+    "ModsMismatch": "mods differ (sync mods with server)",
+    "VersionMismatch": "different game version",
+    "UserBanned": "banned",
+    "UserNotWhitelisted": "not whitelisted",
+    "MaxPlayerLimitReached": "server full",
+}
+REFUSE = re.compile(r"^(\S+)\s+.*Refusing connection for address \(IP ADDR:\(\{(.+):\d+\}\)\), username \((.*)\)\. (\w+)")
+JOIN = re.compile(r"^(\S+)\s+.*\[JOIN\] (\S+) joined the game")
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+def fdocker(*args):
+    """docker against the factorio account's rootless daemon, as that account."""
+    pw = pwd.getpwnam(USER)
+    rt = f"/run/user/{pw.pw_uid}"
+    env = {"HOME": pw.pw_dir, "XDG_RUNTIME_DIR": rt, "DOCKER_HOST": f"unix://{rt}/docker.sock",
+           "PATH": "/usr/bin:/bin"}
+    return run(["runuser", "-u", USER, "--", "docker", *args], env=env, cwd="/")
+
+
+def local(ts):
+    """Docker's RFC 3339 UTC timestamp -> local 'YYYY-MM-DD HH:MM'."""
+    try:
+        t = datetime.datetime.fromisoformat(ts[:26].rstrip("Z") + "+00:00")
+        return t.astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return ts[:16]
+
+
+def section(title):
+    print(f"\n{BOLD}== {title}{END}")
+
+
+def server():
+    section("Server")
+    r = fdocker("inspect", "-f", "{{.State.Status}} {{.State.StartedAt}} {{index .Config.Labels \"factorio.version\"}}", "factorio")
+    if r.returncode:
+        print(f"{RED}factorio container not found{END}"); return None
+    status, started, *ver = r.stdout.split()
+    print(f"status {status}, running since {local(started)}" + (f", version {ver[0]}" if ver else ""))
+    online = fdocker("exec", "factorio", "rcon", "/players online").stdout.strip()
+    print(online or "(RCON not answering)")
+    return started
+
+
+def players():
+    section("Everyone who has ever joined this save (anyone you don't know here = the password leaked)")
+    out = fdocker("exec", "factorio", "rcon", "/players").stdout.strip()
+    print(out or "(RCON not answering)")
+
+
+def log_events(started):
+    logs = fdocker("logs", "--timestamps", "factorio")
+    text = logs.stdout + logs.stderr
+    section(f"Joins and refused connections since {local(started) if started else '?'} (container log)")
+    joins = collections.OrderedDict()
+    for m in map(JOIN.match, text.splitlines()):
+        if m:
+            joins[m.group(2)] = local(m.group(1))
+    print("joined:  " + (", ".join(f"{n} (last {t})" for n, t in joins.items()) if joins else "nobody yet"))
+    agg = {}
+    for m in map(REFUSE.match, text.splitlines()):
+        if m:
+            ts, ip, name, why = m.groups()
+            c = agg.setdefault((ip, name, why), [0, ""])
+            c[0] += 1; c[1] = local(ts)
+    if not agg:
+        print("refused: none"); return
+    print(f"refused: {sum(c[0] for c in agg.values())} attempt(s)")
+    print(f"  {'count':>5}  {'last':16}  {'ip':15}  {'name':16}  reason")
+    for (ip, name, why), (n, last) in sorted(agg.items(), key=lambda kv: -kv[1][0]):
+        flag = RED if why in ("PasswordMismatch", "UserBanned") else ""
+        print(f"  {n:>5}  {last:16}  {ip:15}  {name[:16]:16}  {flag}{REASONS.get(why, why)}{END if flag else ''}")
+
+
+def firewall():
+    section("Isolation firewall (counters reset at each reboot)")
+    r = run(["nft", "-j", "list", "table", "inet", "factorio_guard"])
+    if r.returncode:
+        print(f"{RED}table factorio_guard is NOT loaded: run systemctl status factorio-firewall{END}"); return
+    counts = collections.Counter()
+    for item in json.loads(r.stdout)["nftables"]:
+        rule = item.get("rule")
+        if not rule:
+            continue
+        for e in rule["expr"]:
+            if "counter" in e:
+                counts[rule["chain"]] += e["counter"]["packets"]
+    inbound = counts["input"] + counts["forward"]
+    print(f"inbound from outside the LAN, dropped (not Factorio): {inbound} packet(s)")
+    print(f"factorio account trying to reach the LAN/this box:    {counts['output']} packet(s)")
+    if counts["output"]:
+        print(f"{RED}ALERT: the factorio account tried to reach your LAN or the media server (blocked). "
+              f"Treat the game server as compromised: stop it (factorio-docker stop factorio) and look into it.{END}")
+    elif inbound:
+        print(f"{YEL}Something other than Factorio got past the router (dropped here). Check the router for "
+              f"extra port forwards / UPnP mappings.{END}")
+    else:
+        print(f"{GRN}OK: nothing but Factorio reaches the box from outside, and the game server stays in its box.{END}")
+
+
+def dns():
+    section("DNS")
+    rec = run(["dig", "+short", HOSTNAME]).stdout.split()
+    try:
+        home = urllib.request.urlopen("https://api.ipify.org", timeout=8).read().decode().strip()
+    except OSError:
+        home = "?"
+    ok = home in rec
+    print(f"{HOSTNAME} -> {', '.join(rec) or 'nothing'}; home IP {home} "
+          + (f"{GRN}(match){END}" if ok else f"{YEL}(MISMATCH: check the factorio-ddns container){END}"))
+
+
+def backups():
+    section("Backups")
+    d = os.path.join(pwd.getpwnam(USER).pw_dir, "backups")
+    files = sorted((f for f in os.listdir(d) if f.endswith(".zip")), reverse=True) if os.path.isdir(d) else []
+    if not files:
+        print(f"{YEL}none yet (daily at 03:30){END}"); return
+    newest = os.path.join(d, files[0])
+    t = datetime.datetime.fromtimestamp(os.path.getmtime(newest)).strftime("%Y-%m-%d %H:%M")
+    print(f"{len(files)} kept; newest {files[0]} ({os.path.getsize(newest) // 1048576} MB, {t})")
+
+
+if __name__ == "__main__":
+    if os.geteuid() != 0:
+        sys.exit("run with sudo: sudo factorio-report")
+    started = server()
+    if started:
+        players()
+        log_events(started)
+    firewall()
+    dns()
+    backups()

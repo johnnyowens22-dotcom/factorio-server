@@ -22,6 +22,7 @@ render() {
   sed -e "s|@LAN@|$LAN|g" -e "s|@ROUTER@|$ROUTER|g" -e "s|@FACTORIO_UID@|$uid|g" "$REPO/files/etc/$1"
 }
 ETC_FILES="factorio/firewall.nft systemd/system/factorio-firewall.service"
+SBIN_FILES="factorio-report"           # files/usr/local/sbin/ -> /usr/local/sbin/ (root, 755)
 
 # The host uid that container uid $CONTAINER_UID maps to: the account's first subuid + $CONTAINER_UID - 1.
 mapped_id() {  # $1 = /etc/subuid or /etc/subgid
@@ -42,6 +43,11 @@ check() {
     if [ ! -e "/etc/$f" ]; then echo "NEW      /etc/$f"; diffs=1
     elif render "$f" | cmp -s - "/etc/$f"; then echo "same     /etc/$f"
     else echo "CHANGED  /etc/$f"; render "$f" | diff -u "/etc/$f" - | sed 's/^/    /' || true; diffs=1; fi
+  done
+  for f in $SBIN_FILES; do
+    if [ ! -e "/usr/local/sbin/$f" ]; then echo "NEW      /usr/local/sbin/$f"; diffs=1
+    elif cmp -s "$REPO/files/usr/local/sbin/$f" "/usr/local/sbin/$f"; then echo "same     /usr/local/sbin/$f"
+    else echo "CHANGED  /usr/local/sbin/$f"; diffs=1; fi
   done
   if [ "$(id -u)" -ne 0 ]; then echo "(files in $H need sudo to compare)"; return 0; fi
   while IFS= read -r f; do
@@ -145,9 +151,13 @@ systemctl restart factorio-firewall.service
 systemctl is-enabled --quiet nftables.service 2>/dev/null && \
   warn "nftables.service is enabled: its /etc/nftables.conf runs 'flush ruleset' at boot and wipes Docker's rules. Disable it."
 
+say "Root tools in /usr/local/sbin"
+for f in $SBIN_FILES; do install -o root -g root -m 755 "$REPO/files/usr/local/sbin/$f" "/usr/local/sbin/$f"; done
+
 say "Done. Next steps:"
 cat <<EOF
   1. Fill in the secrets:   sudo -u $U nano $H/.config/factorio/secrets.env
   2. Import the save:       sudo $REPO/install.sh import /home/streambox/factorio-staging
   3. Start:                 sudo -u $U $H/bin/factorio-apply
+  Security/health report:   sudo factorio-report
 EOF

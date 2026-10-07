@@ -18,6 +18,7 @@ repo is `johnnyowens22-dotcom/streambox`; it only records that this exists (its 
 | F8 | 2026-10-07 | **Resource caps**: game container `mem_limit 6g`, `pids_limit 512`; DNS updater 128 MB. | The media server (Jellyfin transcodes) keeps the rest of the box's 16 GB. |
 | F9 | 2026-10-07 | `stop_grace_period: 120s`. | Docker's default 10 s can kill the server while it writes a big Space Age save. |
 | F10 | 2026-10-07 | **Backups**: `factorio-backup` daily at 03:30 and before every update; newest 30 kept in `/home/factorio/backups` (NVMe). Not in the media server's 04:00 backup. | Isolation. Residual risk: an NVMe failure loses both the server and its backups. Open question O1. |
+| F11 | 2026-10-07 | **`sudo factorio-report`** (`/usr/local/sbin`, installed by `install.sh`): server status, everyone who has ever joined (`/players`), refused connections grouped by IP/name/reason (container log, since its last start), the firewall counters with a verdict (output counter > 0 = ALERT), DNS record vs home IP, newest backup. On demand only. | User asked how to spot unwanted traffic. On demand, not pushed (streambox D15). Firewall drop logging was offered and not taken. |
 
 ## Open questions
 
@@ -80,6 +81,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 ## Operating it (all as you, with sudo)
 
 ```sh
+sudo factorio-report                                                      # security + health summary
 sudo -u factorio /home/factorio/bin/factorio-docker ps                    # status
 sudo -u factorio /home/factorio/bin/factorio-docker logs -f factorio      # live log
 sudo -u factorio /home/factorio/bin/factorio-docker exec factorio rcon '/players online'
