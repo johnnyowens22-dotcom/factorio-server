@@ -35,7 +35,7 @@ def fdocker(*args):
     rt = f"/run/user/{pw.pw_uid}"
     env = {"HOME": pw.pw_dir, "XDG_RUNTIME_DIR": rt, "DOCKER_HOST": f"unix://{rt}/docker.sock",
            "PATH": "/usr/bin:/bin"}
-    return run(["runuser", "-u", USER, "--", "docker", *args], env=env, cwd="/")
+    return run(["/usr/sbin/runuser", "-u", USER, "--", "/usr/bin/docker", *args], env=env, cwd="/")
 
 
 def local(ts):
