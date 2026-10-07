@@ -24,7 +24,7 @@ repo is `johnnyowens22-dotcom/streambox`; it only records that this exists (its 
 ## Open questions
 
 - **O1**: Off-NVMe copy of the saves? Options: a one-way root job copying `/home/factorio/backups` to `/mnt/storage/backups/factorio` (one deliberate link to the media server), or you copying a save to your gaming PC now and then.
-- **O3**: UPnP on the router is still **on** (no mappings on 2026-10-07). Fine if a console at home needs it; otherwise turn it off.
+- ~~**O3**~~ Resolved 2026-10-07: UPnP turned **off**. The router log had shown internet scanners reaching 192.168.1.19 (probably the user's Steam Deck) on Steam ports 27015/27032 through UPnP; with UPnP off those openings are gone. If a game ever needs a port, add one targeted forward instead.
 - **O2**: `howoldismoose.com` (apex) is proxied (orange cloud) in Cloudflare and its AWS origin `18.218.225.5` didn't answer on 80/443 on 2026-10-07, even directly. Unrelated to this server; check whether the site is meant to be up.
 
 ## How it fits together
