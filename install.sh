@@ -124,6 +124,10 @@ if [ ! -f "$H/.config/factorio/secrets.env" ]; then
   warn "fill in $H/.config/factorio/secrets.env (see the next steps below)"
 fi
 chmod 600 "$H/.config/factorio/secrets.env"
+# Rebuild the game's settings from secrets.env + factorio-settings, so the Docker restart below picks up any
+# change to either (a fresh install has empty secrets: skipped until factorio-apply).
+as_user python3 -I "$H/bin/factorio-settings" "$H/.config/factorio/secrets.env" "$H/generated" 2>/dev/null \
+  || warn "settings not rebuilt (secrets.env incomplete?); factorio-apply will do it"
 # The game's own folder belongs to the container's user (a subuid): even the factorio account can't edit it.
 data_uid=$(mapped_id /etc/subuid); data_gid=$(mapped_id /etc/subgid)
 install -d -o "$data_uid" -g "$data_gid" -m 755 "$H/data" "$H/data/config" "$H/data/saves" "$H/data/mods" \

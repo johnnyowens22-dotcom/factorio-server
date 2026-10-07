@@ -40,7 +40,7 @@ settings = {
     "auto_pause_when_players_connect": False,
     "only_admins_can_pause_the_game": True,
     "autosave_only_on_server": True,
-    "non_blocking_saving": False,
+    "non_blocking_saving": True,     # Linux server forks to save: no autosave freeze (F12; Wube calls it experimental)
     "minimum_segment_size": 25,
     "minimum_segment_size_peer_count": 20,
     "maximum_segment_size": 100,
