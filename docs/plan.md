@@ -65,6 +65,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 | FG11 | Rootless Docker with `userland-proxy: false` won't start without `br_netfilter` (`stat /proc/sys/net/bridge/bridge-nf-call-iptables: no such file`). | Don't load `br_netfilter` (host-wide, touches the media server's Docker). Keep the default userland proxy (F7). |
 | FG12 | `sudo -u factorio …` from your home folder fails (`stat .: permission denied`): sudo keeps the current folder, which `factorio` may not enter. | Fixed in `factorio-lib` (scripts `cd` to the account's home). Before that fix is installed, prefix commands with `cd / &&`. |
 | FG13 | Netgear refused the forward ("port(s) are being used by other configurations") because an old **port triggering** rule covered 34197. UPnP had no mappings (queried 2026-10-07). | Removed the old triggering rule. The router checks forwarding, triggering, UPnP, ReadySHARE and remote management for overlaps. |
+| FG14 | A friend's first join is refused in steps, shown in the log as `Refusing connection … UserVerificationMissing` (not logged into factorio.com in the game), `PasswordMissing`, then `ModsMismatch`. | Expected. Friend: Settings → Other → log in with the factorio.com account (Steam owners: Steam login links it); enter the password; accept *sync mods with server*, then rejoin. |
 
 ## Build order
 
@@ -72,7 +73,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 2. ✅ 2026-10-07 `sudo ~/factorio-server/install.sh` (account uid 1001, rootless Docker, firewall, timers). First run failed on `userland-proxy: false` (FG11).
 3. ✅ 2026-10-07 Fill in `secrets.env`; copy the save to `~/factorio-staging/` and mods to `~/factorio-staging/mods/`; `sudo ~/factorio-server/install.sh import ~/factorio-staging`; `sudo -u factorio /home/factorio/bin/factorio-apply`. Save (map 2.0.77) and mods loaded; first apply hit FG12.
 4. ✅ 2026-10-07 LAN tests passed: joined `192.168.1.33` from the gaming PC; `factorio_guard` loaded; the `factorio` account gets *connection refused* to Sonarr `:8989` and 200 from factorio.com; from inside the game container Sonarr times out (slirp4netns turns the reject into a drop); `factorio.howoldismoose.com` = the public IP; both timers scheduled.
-5. ✅ 2026-10-07 UDP 34197 forward added (an old port-triggering rule on 34197 had to go first, FG13). ShieldsUP *All Service Ports*: all stealth. ⏳ First outside join by a friend; check the log shows real IPs (F7).
+5. ✅ 2026-10-07 UDP 34197 forward added (an old port-triggering rule on 34197 had to go first, FG13). ShieldsUP *All Service Ports*: all stealth. ✅ 2026-10-07 first outside join by a friend; the log shows their real public IP (F7 confirmed).
 6. ✅ 2026-10-07 Streambox repo: D19 amended ("except UDP 34197 for Factorio").
 7. ⏳ Reboot test while watching: firewall, rootless Docker (linger) and both containers come back by themselves. Check the first 03:30 backup exists in `/home/factorio/backups`.
 
