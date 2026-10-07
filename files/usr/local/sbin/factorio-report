@@ -112,6 +112,7 @@ def firewall():
     print(f"stray packets dropped (late replies, harmless):        {counts['stray']}")
     print(f"new connections from outside the LAN, not Factorio:   {inbound} packet(s)")
     print(f"factorio account trying to reach the LAN/this box:    {counts['output']} packet(s)")
+    shown = recent_drops()
     if counts["output"]:
         print(f"{RED}ALERT: the factorio account tried to reach your LAN or the media server (blocked). "
               f"Treat the game server as compromised: stop it (factorio-docker stop factorio) and look into it.{END}")
@@ -120,6 +121,21 @@ def firewall():
               f"extra port forwards / UPnP mappings.{END}")
     else:
         print(f"{GRN}OK: nothing but Factorio reaches the box from outside, and the game server stays in its box.{END}")
+
+
+def recent_drops():
+    """Last few logged drops since boot (the firewall logs at most ~6 a minute)."""
+    r = run(["journalctl", "-k", "-b", "--no-pager", "-o", "short-iso", "-g", "factorio_guard (drop|ALERT)"])
+    lines = [l for l in r.stdout.splitlines() if "factorio_guard" in l][-8:]
+    if not lines:
+        return 0
+    print("last logged drops (this boot):")
+    for l in lines:
+        f = dict(kv.split("=", 1) for kv in l.split() if "=" in kv)
+        kind = "ALERT" if "ALERT" in l else "drop"
+        print(f"  {l[:16].replace('T', ' ')}  {kind:5}  {f.get('SRC', '?'):>15} -> {f.get('DST', '?'):15}  "
+              f"{f.get('PROTO', '?'):4} port {f.get('DPT', '-'):5}  in {f.get('IN', '-') or '-'}")
+    return len(lines)
 
 
 def dns():

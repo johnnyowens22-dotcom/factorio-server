@@ -19,6 +19,8 @@ table inet factorio_guard {
     ip6 saddr fe80::/10 accept
     meta l4proto ipv6-icmp accept
     udp dport 34197 accept comment "Factorio"
+    meta pkttype { broadcast, multicast } accept comment "local only: the router never forwards these from the internet"
+    limit rate 6/minute burst 5 packets log prefix "factorio_guard drop: " level info
     counter drop comment "new traffic from outside the LAN"
   }
 
@@ -31,6 +33,7 @@ table inet factorio_guard {
     iifname "br-*" accept
     ip saddr @lan4 accept
     ip6 saddr fe80::/10 accept
+    limit rate 6/minute burst 5 packets log prefix "factorio_guard drop: " level info
     counter drop comment "new traffic from outside the LAN"
   }
 
@@ -41,6 +44,7 @@ table inet factorio_guard {
     meta skuid != @FACTORIO_UID@ accept
     ct state established,related accept
     ip daddr @ROUTER@ meta l4proto { tcp, udp } th dport 53 accept
+    ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } limit rate 6/minute burst 5 packets log prefix "factorio_guard ALERT: " level warn
     ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } counter reject comment "factorio account -> LAN/host"
     ip6 daddr { ::1, fc00::/7, fe80::/10 } counter reject comment "factorio account -> LAN/host"
   }
