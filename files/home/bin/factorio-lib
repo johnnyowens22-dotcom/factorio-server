@@ -1,5 +1,6 @@
 # Shared by the factorio-* scripts (sourced). Talks to this account's rootless Docker daemon only.
 HOME=$(getent passwd "$(id -un)" | cut -d: -f6); export HOME
+cd "$HOME"   # sudo -u keeps the caller's folder, which this account may not enter
 SECRETS="$HOME/.config/factorio/secrets.env"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"

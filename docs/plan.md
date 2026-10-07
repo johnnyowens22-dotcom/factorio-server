@@ -22,6 +22,7 @@ repo is `johnnyowens22-dotcom/streambox`; it only records that this exists (its 
 ## Open questions
 
 - **O1**: Off-NVMe copy of the saves? Options: a one-way root job copying `/home/factorio/backups` to `/mnt/storage/backups/factorio` (one deliberate link to the media server), or you copying a save to your gaming PC now and then.
+- **O3**: UPnP on the router is still **on** (no mappings on 2026-10-07). Fine if a console at home needs it; otherwise turn it off.
 - **O2**: `howoldismoose.com` (apex) is proxied (orange cloud) in Cloudflare and its AWS origin `18.218.225.5` didn't answer on 80/443 on 2026-10-07, even directly. Unrelated to this server; check whether the site is meant to be up.
 
 ## How it fits together
@@ -62,15 +63,18 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 | FG9 | `secrets.env` is a plain env file: no quotes, no comments after a value, password letters/digits only. | `factorio-settings` refuses a weak or symbol-containing password. |
 | FG10 | Claude runs as `streambox` without sudo, so it can't operate this server. | Every command below is run by the user. |
 | FG11 | Rootless Docker with `userland-proxy: false` won't start without `br_netfilter` (`stat /proc/sys/net/bridge/bridge-nf-call-iptables: no such file`). | Don't load `br_netfilter` (host-wide, touches the media server's Docker). Keep the default userland proxy (F7). |
+| FG12 | `sudo -u factorio …` from your home folder fails (`stat .: permission denied`): sudo keeps the current folder, which `factorio` may not enter. | Fixed in `factorio-lib` (scripts `cd` to the account's home). Before that fix is installed, prefix commands with `cd / &&`. |
+| FG13 | Netgear refused the forward ("port(s) are being used by other configurations") because an old **port triggering** rule covered 34197. UPnP had no mappings (queried 2026-10-07). | Removed the old triggering rule. The router checks forwarding, triggering, UPnP, ReadySHARE and remote management for overlaps. |
 
 ## Build order
 
 1. ✅ Router hardening (DMZ off, no remote management on this firmware, IPv6 disabled), Cloudflare zone active, this repo + deploy key.
-2. You: `sudo ~/factorio-server/install.sh` (account, rootless Docker, firewall, timers).
-3. You: fill in `secrets.env`; copy the save to `~/factorio-staging/` and mods to `~/factorio-staging/mods/`; `sudo ~/factorio-server/install.sh import ~/factorio-staging`; `sudo -u factorio /home/factorio/bin/factorio-apply`.
-4. Test on the LAN: join `192.168.1.33` from the gaming PC. Check: the firewall table is loaded, the `factorio` account can't reach `192.168.1.33:8989` (Sonarr), `factorio.howoldismoose.com` resolves to the home IP.
-5. Router: add the UDP 34197 forward. Then from outside (phone on cellular / a friend): join test, and a port scan showing nothing else open.
-6. Streambox repo: D19 amended ("except UDP 34197 for Factorio").
+2. ✅ 2026-10-07 `sudo ~/factorio-server/install.sh` (account uid 1001, rootless Docker, firewall, timers). First run failed on `userland-proxy: false` (FG11).
+3. ✅ 2026-10-07 Fill in `secrets.env`; copy the save to `~/factorio-staging/` and mods to `~/factorio-staging/mods/`; `sudo ~/factorio-server/install.sh import ~/factorio-staging`; `sudo -u factorio /home/factorio/bin/factorio-apply`. Save (map 2.0.77) and mods loaded; first apply hit FG12.
+4. ✅ 2026-10-07 LAN tests passed: joined `192.168.1.33` from the gaming PC; `factorio_guard` loaded; the `factorio` account gets *connection refused* to Sonarr `:8989` and 200 from factorio.com; from inside the game container Sonarr times out (slirp4netns turns the reject into a drop); `factorio.howoldismoose.com` = the public IP; both timers scheduled.
+5. ✅ 2026-10-07 UDP 34197 forward added (an old port-triggering rule on 34197 had to go first, FG13). ShieldsUP *All Service Ports*: all stealth. ⏳ First outside join by a friend; check the log shows real IPs (F7).
+6. ✅ 2026-10-07 Streambox repo: D19 amended ("except UDP 34197 for Factorio").
+7. ⏳ Reboot test while watching: firewall, rootless Docker (linger) and both containers come back by themselves. Check the first 03:30 backup exists in `/home/factorio/backups`.
 
 ## Operating it (all as you, with sudo)
 
