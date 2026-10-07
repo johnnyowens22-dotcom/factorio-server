@@ -58,9 +58,10 @@ def server():
         print(f"{RED}factorio container not found{END}"); return None
     status, started, *ver = r.stdout.split()
     print(f"status {status}, running since {local(started)}" + (f", version {ver[0]}" if ver else ""))
+    created = fdocker("inspect", "-f", "{{.Created}}", "factorio").stdout.strip()
     online = fdocker("exec", "factorio", "rcon", "/players online").stdout.strip()
     print(online or "(RCON not answering)")
-    return started
+    return created or started
 
 
 def players():
@@ -72,7 +73,7 @@ def players():
 def log_events(started):
     logs = fdocker("logs", "--timestamps", "factorio")
     text = logs.stdout + logs.stderr
-    section(f"Joins and refused connections since {local(started) if started else '?'} (container log)")
+    section(f"Joins and refused connections since {local(started) if started else '?'} (container log; resets when an update recreates it)")
     joins = collections.OrderedDict()
     for m in map(JOIN.match, text.splitlines()):
         if m:
@@ -103,11 +104,13 @@ def firewall():
         rule = item.get("rule")
         if not rule:
             continue
+        kind = "stray" if "stray" in rule.get("comment", "") else rule["chain"]
         for e in rule["expr"]:
             if "counter" in e:
-                counts[rule["chain"]] += e["counter"]["packets"]
+                counts[kind] += e["counter"]["packets"]
     inbound = counts["input"] + counts["forward"]
-    print(f"inbound from outside the LAN, dropped (not Factorio): {inbound} packet(s)")
+    print(f"stray packets dropped (late replies, harmless):        {counts['stray']}")
+    print(f"new connections from outside the LAN, not Factorio:   {inbound} packet(s)")
     print(f"factorio account trying to reach the LAN/this box:    {counts['output']} packet(s)")
     if counts["output"]:
         print(f"{RED}ALERT: the factorio account tried to reach your LAN or the media server (blocked). "

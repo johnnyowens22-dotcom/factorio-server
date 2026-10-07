@@ -2,6 +2,7 @@
 # Sets up the isolated Factorio server (docs/plan.md). Run by the user, as root, from a clone of this repo:
 #   sudo ./install.sh                  install or update (idempotent; safe to re-run)
 #   sudo ./install.sh import DIR       copy a save (DIR/*.zip) and mods (DIR/mods/*) into the server
+#   sudo ./install.sh host             only the /etc + /usr/local/sbin parts (firewall, report): no game restart
 #   ./install.sh --check               show what install would change (/etc only without sudo)
 set -euo pipefail
 
@@ -77,10 +78,30 @@ import_save() {
   say "Imported. Start it with: sudo -u $U $H/bin/factorio-apply"
 }
 
+install_host() {
+  say "Firewall (own nftables table; Docker's rules untouched)"
+  install -d -m 755 /etc/factorio
+  for f in $ETC_FILES; do
+    render "$f" > "/etc/$f.new"
+    chmod 644 "/etc/$f.new"; mv "/etc/$f.new" "/etc/$f"
+  done
+  nft -c -f /etc/factorio/firewall.nft || die "firewall rules don't parse; nothing loaded"
+  systemctl daemon-reload
+  systemctl enable factorio-firewall.service >/dev/null 2>&1
+  systemctl restart factorio-firewall.service
+  systemctl is-enabled --quiet nftables.service 2>/dev/null && \
+    warn "nftables.service is enabled: its /etc/nftables.conf runs 'flush ruleset' at boot and wipes Docker's rules. Disable it."
+
+  say "Root tools in /usr/local/sbin"
+  for f in $SBIN_FILES; do install -o root -g root -m 755 "$REPO/files/usr/local/sbin/$f" "/usr/local/sbin/$f"; done
+}
+
 case "${1:-}" in
   --check) check; exit 0 ;;
   import)  [ "$(id -u)" -eq 0 ] || die "run with sudo"; [ -n "${2:-}" ] || die "usage: sudo $0 import DIR"
            id "$U" >/dev/null 2>&1 || die "run 'sudo $0' first"; import_save "$2"; exit 0 ;;
+  host)    [ "$(id -u)" -eq 0 ] || die "run with sudo"; id "$U" >/dev/null 2>&1 || die "run 'sudo $0' first"
+           install_host; say "Done (game server not restarted)."; exit 0 ;;
   "")      ;;
   *)       die "unknown argument: $1" ;;
 esac
@@ -142,21 +163,7 @@ as_user systemctl --user enable docker.service >/dev/null 2>&1
 as_user systemctl --user restart docker.service
 as_user systemctl --user enable --now factorio-update.timer factorio-backup.timer
 
-say "Firewall (own nftables table; Docker's rules untouched)"
-install -d -m 755 /etc/factorio
-for f in $ETC_FILES; do
-  render "$f" > "/etc/$f.new"
-  chmod 644 "/etc/$f.new"; mv "/etc/$f.new" "/etc/$f"
-done
-nft -c -f /etc/factorio/firewall.nft || die "firewall rules don't parse; nothing loaded"
-systemctl daemon-reload
-systemctl enable factorio-firewall.service >/dev/null 2>&1
-systemctl restart factorio-firewall.service
-systemctl is-enabled --quiet nftables.service 2>/dev/null && \
-  warn "nftables.service is enabled: its /etc/nftables.conf runs 'flush ruleset' at boot and wipes Docker's rules. Disable it."
-
-say "Root tools in /usr/local/sbin"
-for f in $SBIN_FILES; do install -o root -g root -m 755 "$REPO/files/usr/local/sbin/$f" "/usr/local/sbin/$f"; done
+install_host
 
 say "Done. Next steps:"
 cat <<EOF

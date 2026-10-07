@@ -11,6 +11,7 @@ table inet factorio_guard {
   chain input {
     type filter hook input priority filter - 10; policy accept;
     ct state established,related accept
+    ct state invalid counter drop comment "stray packets (late replies to closed connections)"
     iif lo accept
     iifname "docker0" accept
     iifname "br-*" accept                       # media containers talking to the host (e.g. to Jellyfin)
@@ -25,6 +26,7 @@ table inet factorio_guard {
   chain forward {
     type filter hook forward priority filter - 10; policy accept;
     ct state established,related accept
+    ct state invalid counter drop comment "stray packets (late replies to closed connections)"
     iifname "docker0" accept
     iifname "br-*" accept
     ip saddr @lan4 accept

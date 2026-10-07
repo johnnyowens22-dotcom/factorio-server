@@ -58,7 +58,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 | FG2 | The new image appears hours after a release; friends whose Steam updated first can't join until then. | Wait (the server updates within 15 min of the image), or Steam → Factorio → Properties → Betas → previous version. |
 | FG3 | The server won't restart for an update while anyone is online. | By design. It updates on the first check with 0 players. |
 | FG4 | 04:30 auto-reboots (only when an update needs one) drop players for a few minutes. | Accepted. The server returns on its own with the last autosave (every 10 min). |
-| FG5 | At home, the public hostname may not work (NAT loopback on the R8000 is untested). | At home, connect to `192.168.1.33`. |
+| FG5 | Joining by hostname from inside the home needs NAT loopback on the router. | **Works** on the R8000 (2026-10-07: a home join via `factorio.howoldismoose.com` arrived from the public IP). `192.168.1.33` also works at home. |
 | FG6 | `qBittorrent` saturating the Comcast upload causes lag in the game (measured 2026-10-07: jitter 33 ms, spikes to 141 ms at its 2.5 MiB/s cap). | **Done:** streambox D58 caps torrent upload at 1 MiB/s (jitter 1.7 ms, worst 20 ms). If lag returns, check the upload first. |
 | FG7 | Re-running `install.sh` restarts the account's Docker daemon, which restarts the server. | Run it when nobody is playing. |
 | FG8 | The game folder belongs to the container's subuid, so the `factorio` account can read but not edit it. | Saves/mods go in through `install.sh import`. |
@@ -68,6 +68,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 | FG12 | `sudo -u factorio …` from your home folder fails (`stat .: permission denied`): sudo keeps the current folder, which `factorio` may not enter. | Fixed in `factorio-lib` (scripts `cd` to the account's home). Before that fix is installed, prefix commands with `cd / &&`. |
 | FG13 | Netgear refused the forward ("port(s) are being used by other configurations") because an old **port triggering** rule covered 34197. UPnP had no mappings (queried 2026-10-07). | Removed the old triggering rule. The router checks forwarding, triggering, UPnP, ReadySHARE and remote management for overlaps. |
 | FG14 | A friend's first join is refused in steps, shown in the log as `Refusing connection … UserVerificationMissing` (not logged into factorio.com in the game), `PasswordMissing`, then `ModsMismatch`. | Expected. Friend: Settings → Other → log in with the factorio.com account (Steam owners: Steam login links it); enter the password; accept *sync mods with server*, then rejoin. |
+| FG15 | The firewall's "new traffic from outside" counter also caught harmless stray packets (late replies after a connection closed), so the report warned on 1 packet. | `ct state invalid` packets now have their own counter, shown as harmless. Firewall/report changes install with `sudo ./install.sh host`, which doesn't restart the game. |
 
 ## Build order
 
@@ -83,6 +84,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 
 ```sh
 sudo factorio-report                                                      # security + health summary
+sudo ~/factorio-server/install.sh host                                    # firewall/report changes only (no game restart)
 sudo -u factorio /home/factorio/bin/factorio-docker ps                    # status
 sudo -u factorio /home/factorio/bin/factorio-docker logs -f factorio      # live log
 sudo -u factorio /home/factorio/bin/factorio-docker exec factorio rcon '/players online'
