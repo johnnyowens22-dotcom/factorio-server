@@ -1,0 +1,24 @@
+#!/bin/sh
+# Every 15 min (factorio-update.timer): pull the stable image; if it changed, back up and restart the
+# server, but only while nobody is playing (F5). The DNS updater is refreshed whenever it changes.
+set -eu
+. "$(dirname "$0")/factorio-lib"
+running_image() { docker inspect -f '{{.Image}}' "$1" 2>/dev/null || true; }
+tag_image() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
+dc pull -q || { log "pull failed (offline?); trying again next run"; exit 0; }
+
+if [ "$(running_image factorio-ddns)" != "$(tag_image favonia/cloudflare-ddns:1)" ]; then
+  dc up -d ddns && log "DNS updater updated"
+fi
+
+[ "$(running_image factorio)" = "$(tag_image factoriotools/factorio:stable-rootless)" ] && exit 0
+ls "$HOME/data/saves"/*.zip >/dev/null 2>&1 || { log "no save imported yet; not starting the server"; exit 0; }
+if [ "$(docker inspect -f '{{.State.Running}}' factorio 2>/dev/null)" = true ]; then
+  n=$(players_online)
+  [ -n "$n" ] || { log "new Factorio version waiting: server not answering RCON yet"; exit 0; }
+  [ "$n" = 0 ] || { log "new Factorio version waiting: $n player(s) online"; exit 0; }
+fi
+"$(dirname "$0")/factorio-backup" pre-update
+dc up -d factorio
+log "Factorio updated to $(docker image inspect -f '{{index .Config.Labels "factorio.version"}}' factoriotools/factorio:stable-rootless 2>/dev/null || echo 'new image')"
+docker image prune -f >/dev/null 2>&1 || true

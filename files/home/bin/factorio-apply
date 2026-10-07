@@ -1,0 +1,9 @@
+#!/bin/sh
+# Rebuild server-settings.json + server-adminlist.json from secrets.env, then (re)create the containers.
+# Run as the factorio user: sudo -u factorio /home/factorio/bin/factorio-apply
+set -eu
+. "$(dirname "$0")/factorio-lib"
+python3 -I "$(dirname "$0")/factorio-settings" "$SECRETS" "$HOME/generated"
+if ls "$HOME/data/saves"/*.zip >/dev/null 2>&1; then dc up -d --remove-orphans
+else dc up -d --remove-orphans ddns; echo "no save imported yet: started only the DNS updater"; fi
+echo "applied; follow the log with: sudo -u factorio /home/factorio/bin/factorio-docker logs -f factorio"

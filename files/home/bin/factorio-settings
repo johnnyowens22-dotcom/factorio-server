@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Write server-settings.json and server-adminlist.json from secrets.env (docs/plan.md, F3)."""
+import json, os, sys
+
+secrets_path, out_dir = sys.argv[1], sys.argv[2]
+env = {}
+with open(secrets_path) as f:
+    for line in f:   # plain KEY=value lines; no quotes, no comments after a value
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            env[k.strip()] = v.strip()
+
+for k in ("FACTORIO_USERNAME", "GAME_PASSWORD"):
+    if not env.get(k):
+        sys.exit(f"{k} is empty in {secrets_path}")
+pw = env["GAME_PASSWORD"]
+if len(pw) < 20 or not pw.isalnum():
+    sys.exit("GAME_PASSWORD: use 20+ letters and digits only (it's the only gate; symbols trip up the env file)")
+
+settings = {
+    "name": env.get("SERVER_NAME") or "howoldismoose",
+    "description": "Private server",
+    "tags": [],
+    "max_players": 0,
+    "visibility": {"public": False, "lan": False},   # hidden: join by address only
+    "username": "", "password": "", "token": "",     # only needed for public listing
+    "game_password": env["GAME_PASSWORD"],
+    "require_user_verification": True,                # real factorio.com names, so bans stick
+    "max_upload_in_kilobytes_per_second": 0,
+    "max_upload_slots": 5,
+    "minimum_latency_in_ticks": 0,
+    "max_heartbeats_per_second": 60,
+    "ignore_player_limit_for_returning_players": False,
+    "allow_commands": "admins-only",
+    "autosave_interval": 10,
+    "autosave_slots": 5,
+    "afk_autokick_interval": 0,
+    "auto_pause": True,
+    "auto_pause_when_players_connect": False,
+    "only_admins_can_pause_the_game": True,
+    "autosave_only_on_server": True,
+    "non_blocking_saving": False,
+    "minimum_segment_size": 25,
+    "minimum_segment_size_peer_count": 20,
+    "maximum_segment_size": 100,
+    "maximum_segment_size_peer_count": 10,
+}
+admins = [env["FACTORIO_USERNAME"]] + [a.strip() for a in env.get("EXTRA_ADMINS", "").split(",") if a.strip()]
+
+os.makedirs(out_dir, exist_ok=True)
+for name, data in (("server-settings.json", settings), ("server-adminlist.json", admins)):
+    tmp = os.path.join(out_dir, name + ".tmp")
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(tmp, 0o644)   # the container's user must read it; the home folder (700) keeps everyone else out
+    os.replace(tmp, os.path.join(out_dir, name))
+print(f"wrote {out_dir}/server-settings.json and server-adminlist.json ({len(admins)} admin(s))")

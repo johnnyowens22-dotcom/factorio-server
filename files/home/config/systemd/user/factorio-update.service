@@ -1,0 +1,8 @@
+[Unit]
+Description=Factorio: follow the stable release when nobody is playing
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/factorio-update

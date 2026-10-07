@@ -1,0 +1,4 @@
+#!/bin/sh
+# `docker` against the factorio account's own daemon: sudo -u factorio /home/factorio/bin/factorio-docker ps
+. "$(dirname "$0")/factorio-lib"
+exec docker "$@"

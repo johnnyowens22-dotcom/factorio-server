@@ -1,0 +1,12 @@
+# Shared by the factorio-* scripts (sourced). Talks to this account's rootless Docker daemon only.
+HOME=$(getent passwd "$(id -un)" | cut -d: -f6); export HOME
+SECRETS="$HOME/.config/factorio/secrets.env"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+dc() { docker compose -f "$HOME/compose.yml" --env-file "$SECRETS" "$@"; }
+log() { echo "$*"; }
+# Number of players online, or empty if the server isn't answering.
+players_online() {
+  docker exec factorio rcon /players online 2>/dev/null | sed -n 's/^Online players (\([0-9]*\)).*/\1/p' | head -1
+}

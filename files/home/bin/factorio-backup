@@ -1,0 +1,19 @@
+#!/bin/sh
+# Copy the newest save to ~/backups as save-<date>-<tag>.zip; keeps the newest 30 (F10).
+# A running server is asked to save first. Usage: factorio-backup [tag]
+set -eu
+. "$(dirname "$0")/factorio-lib"
+tag=${1:-daily}; dir="$HOME/backups"; mkdir -p "$dir"
+if [ -n "$(players_online)" ]; then
+  marker=$(mktemp); docker exec factorio rcon /server-save >/dev/null 2>&1 || true
+  i=0; while [ $i -lt 60 ]; do   # wait for a save newer than the request, then let it settle
+    new=$(find "$HOME/data/saves" -maxdepth 1 -name '*.zip' -newer "$marker" | head -1)
+    [ -n "$new" ] && { sleep 5; break; }; sleep 2; i=$((i + 1))
+  done; rm -f "$marker"
+fi
+latest=$(ls -1t "$HOME/data/saves"/*.zip 2>/dev/null | grep -v '\.tmp\.zip$' | head -1) || true
+[ -n "$latest" ] || { log "no save to back up yet"; exit 0; }
+out="$dir/save-$(date +%Y-%m-%d-%H%M)-$tag.zip"
+cp "$latest" "$out.part" && mv "$out.part" "$out"
+log "backed up $(basename "$latest") -> $(basename "$out") ($(du -h "$out" | cut -f1))"
+ls -1t "$dir"/save-*.zip | tail -n +31 | xargs -r rm -f

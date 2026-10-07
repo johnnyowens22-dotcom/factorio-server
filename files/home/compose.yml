@@ -1,0 +1,46 @@
+# Factorio server + DNS updater. Runs on the factorio account's own rootless Docker daemon, never the
+# system one (docs/plan.md, F2). Secrets come from ~/.config/factorio/secrets.env via `--env-file`.
+name: factorio
+
+x-hardening: &hardening
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
+
+services:
+  factorio:
+    <<: *hardening
+    # Follows factorio.com's stable release = Steam's default branch (F5). Never `latest`: that's experimental.
+    image: factoriotools/factorio:stable-rootless
+    container_name: factorio
+    ports:
+      - "34197:34197/udp"            # the only published port; RCON stays inside the container
+    volumes:
+      - /home/factorio/data:/factorio
+      - /home/factorio/generated/server-settings.json:/factorio/config/server-settings.json:ro
+      - /home/factorio/generated/server-adminlist.json:/factorio/config/server-adminlist.json:ro
+    environment:
+      LOAD_LATEST_SAVE: "true"
+      DLC_SPACE_AGE: "true"
+      UPDATE_MODS_ON_START: "true"
+      USERNAME: ${FACTORIO_USERNAME:?set in secrets.env}
+      TOKEN: ${FACTORIO_TOKEN:?set in secrets.env}
+    stop_grace_period: 120s          # a big Space Age save takes longer than Docker's default 10 s (F9)
+    mem_limit: 6g                    # the media server keeps the rest of the RAM
+    pids_limit: 512
+
+  ddns:
+    <<: *hardening
+    image: favonia/cloudflare-ddns:1
+    container_name: factorio-ddns
+    user: "1000:1000"
+    read_only: true
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?set in secrets.env}
+      DOMAINS: ${DDNS_HOSTNAME:-factorio.howoldismoose.com}
+      PROXIED: "false"               # grey cloud: Cloudflare's free proxy can't carry game traffic
+      IP6_PROVIDER: none             # no public IPv6 at home
+    mem_limit: 128m

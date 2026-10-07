@@ -1,0 +1,7 @@
+[Unit]
+Description=Factorio: back up the newest save
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/factorio-backup daily
