@@ -11,6 +11,6 @@ own account, own rootless Docker daemon, own firewall table, own secrets and bac
 
 | Path in repo | Installed to |
 |---|---|
-| `files/home/` | `/home/factorio/` (owner `factorio`) |
+| `files/home/` | `/home/factorio/` (owner `factorio`; `config/` → `.config/`) |
 | `files/etc/` | `/etc/` (`@LAN@`, `@ROUTER@`, `@FACTORIO_UID@` filled in by `install.sh`) |
 | `secrets.env.example` | first install only: `/home/factorio/.config/factorio/secrets.env` (600). Real secrets never go in git. |
