@@ -39,13 +39,19 @@ table inet factorio_guard {
 
   # The factorio account (its rootless Docker, slirp4netns, the game, the DNS updater) may reach the internet
   # but nothing on the LAN or this box, apart from DNS on the router.
+  # Positive match only (FG18): packets the kernel sends for itself (IPv6 neighbour discovery, ICMP errors) have no
+  # owning user, so "skuid != factorio -> accept" let them fall through to the rejects and blamed them on the game.
   chain output {
     type filter hook output priority filter - 10; policy accept;
-    meta skuid != @FACTORIO_UID@ accept
+    meta skuid @FACTORIO_UID@ jump from_factorio
+  }
+
+  chain from_factorio {
     ct state established,related accept
     ip daddr @ROUTER@ meta l4proto { tcp, udp } th dport 53 accept
-    ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } limit rate 6/minute burst 5 packets log prefix "factorio_guard ALERT: " level warn
+    ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } limit rate 6/minute burst 5 packets log prefix "factorio_guard ALERT: " flags skuid level warn
     ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } counter reject comment "factorio account -> LAN/host"
+    ip6 daddr { ::1, fc00::/7, fe80::/10 } limit rate 6/minute burst 5 packets log prefix "factorio_guard ALERT: " flags skuid level warn
     ip6 daddr { ::1, fc00::/7, fe80::/10 } counter reject comment "factorio account -> LAN/host"
   }
 }

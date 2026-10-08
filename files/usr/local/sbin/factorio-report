@@ -104,7 +104,8 @@ def firewall():
         rule = item.get("rule")
         if not rule:
             continue
-        kind = "stray" if "stray" in rule.get("comment", "") else rule["chain"]
+        chain = "output" if rule["chain"] == "from_factorio" else rule["chain"]   # FG18: the checks live there
+        kind = "stray" if "stray" in rule.get("comment", "") else chain
         for e in rule["expr"]:
             if "counter" in e:
                 counts[kind] += e["counter"]["packets"]
@@ -133,8 +134,9 @@ def recent_drops():
     for l in lines:
         f = dict(kv.split("=", 1) for kv in l.split() if "=" in kv)
         kind = "ALERT" if "ALERT" in l else "drop"
+        who = f"  uid {f['UID']}" if "UID" in f else ""   # ALERT lines carry the sending user (FG18)
         print(f"  {l[:16].replace('T', ' ')}  {kind:5}  {f.get('SRC', '?'):>15} -> {f.get('DST', '?'):15}  "
-              f"{f.get('PROTO', '?'):4} port {f.get('DPT', '-'):5}  in {f.get('IN', '-') or '-'}")
+              f"{f.get('PROTO', '?'):6} port {f.get('DPT', '-'):5}  {'out ' + f['OUT'] if f.get('OUT') else 'in ' + (f.get('IN') or '-')}{who}")
     return len(lines)
 
 
