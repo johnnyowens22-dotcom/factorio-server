@@ -84,7 +84,7 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 5. ✅ 2026-10-07 UDP 34197 forward added (an old port-triggering rule on 34197 had to go first, FG13). ShieldsUP *All Service Ports*: all stealth. ✅ 2026-10-07 first outside join by a friend; the log shows their real public IP (F7 confirmed).
 6. ✅ 2026-10-07 Streambox repo: D19 amended ("except UDP 34197 for Factorio").
 7. ⏳ Reboot test while watching: firewall, rootless Docker (linger) and both containers come back by themselves. Check the first 03:30 backup exists in `/home/factorio/backups`.
-8. ⏳ F13: `sudo ~/factorio-server/install.sh update` (no game restart; save any `ALERT6` firewall log lines first, the firewall reloads), then check `cat /run/factorio/online` shows `players=0 at=…` within a minute. The media side goes live with streambox `sudo host/install.sh` (its docs/11).
+8. ✅ 2026-10-07 F13 installed (`install.sh update`), first throttled session verified on the media side; FG18 firewall installed (`install.sh host`; output chain now `meta skuid 1001 jump from_factorio`). Originally: F13: `sudo ~/factorio-server/install.sh update` (no game restart; save any `ALERT6` firewall log lines first, the firewall reloads), then check `cat /run/factorio/online` shows `players=0 at=…` within a minute. The media side goes live with streambox `sudo host/install.sh` (its docs/11).
 
 ## Operating it (all as you, with sudo)
 
