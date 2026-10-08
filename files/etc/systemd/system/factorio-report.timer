@@ -1,0 +1,9 @@
+[Unit]
+Description=Factorio: publish the security report every 5 minutes (F15)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

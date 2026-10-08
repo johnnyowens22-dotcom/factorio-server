@@ -23,7 +23,8 @@ render() {
   local uid; uid=$(id -u "$U" 2>/dev/null || echo UNKNOWN)
   sed -e "s|@LAN@|$LAN|g" -e "s|@ROUTER@|$ROUTER|g" -e "s|@FACTORIO_UID@|$uid|g" "$REPO/files/etc/$1"
 }
-ETC_FILES="factorio/firewall.nft systemd/system/factorio-firewall.service tmpfiles.d/factorio-status.conf"
+ETC_FILES="factorio/firewall.nft systemd/system/factorio-firewall.service tmpfiles.d/factorio-status.conf
+           systemd/system/factorio-report.service systemd/system/factorio-report.timer tmpfiles.d/factorio-report.conf"
 SBIN_FILES="factorio-report"           # files/usr/local/sbin/ -> /usr/local/sbin/ (root, 755)
 USER_UNITS="factorio-update.timer factorio-backup.timer factorio-status.service"   # enabled in the user session
 
@@ -109,6 +110,11 @@ install_host() {
 
   say "Root tools in /usr/local/sbin"
   for f in $SBIN_FILES; do install -o root -g root -m 755 "$REPO/files/usr/local/sbin/$f" "/usr/local/sbin/$f"; done
+
+  say "Security report for the media server's dashboard every 5 min (F15)"
+  systemd-tmpfiles --create /etc/tmpfiles.d/factorio-report.conf
+  systemctl enable --now factorio-report.timer >/dev/null 2>&1
+  systemctl start factorio-report.service || warn "factorio-report.service failed: journalctl -u factorio-report"
 }
 
 case "${1:-}" in

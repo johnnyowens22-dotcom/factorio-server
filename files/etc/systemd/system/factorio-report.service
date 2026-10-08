@@ -1,0 +1,11 @@
+[Unit]
+Description=Factorio: publish the security report for the media server's dashboard (F15)
+Documentation=https://github.com/johnnyowens22-dotcom/factorio-server
+After=factorio-firewall.service
+
+[Service]
+Type=oneshot
+# Root-owned folder (not /run/factorio, which the factorio account owns and could rewrite)
+ExecStart=/usr/local/sbin/factorio-report --json /run/factorio-report/report.json
+Nice=10
+TimeoutStartSec=120
