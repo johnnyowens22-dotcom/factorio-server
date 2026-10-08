@@ -3,6 +3,7 @@
 #   sudo ./install.sh                  install or update (idempotent; safe to re-run)
 #   sudo ./install.sh import DIR       copy a save (DIR/*.zip) and mods (DIR/mods/*) into the server
 #   sudo ./install.sh host             only the /etc + /usr/local/sbin parts (firewall, report): no game restart
+#   sudo ./install.sh update           scripts, user services (incl. factorio-status) + host parts: no Docker or game restart
 #   ./install.sh --check               show what install would change (/etc only without sudo)
 set -euo pipefail
 
@@ -22,8 +23,9 @@ render() {
   local uid; uid=$(id -u "$U" 2>/dev/null || echo UNKNOWN)
   sed -e "s|@LAN@|$LAN|g" -e "s|@ROUTER@|$ROUTER|g" -e "s|@FACTORIO_UID@|$uid|g" "$REPO/files/etc/$1"
 }
-ETC_FILES="factorio/firewall.nft systemd/system/factorio-firewall.service"
+ETC_FILES="factorio/firewall.nft systemd/system/factorio-firewall.service tmpfiles.d/factorio-status.conf"
 SBIN_FILES="factorio-report"           # files/usr/local/sbin/ -> /usr/local/sbin/ (root, 755)
+USER_UNITS="factorio-update.timer factorio-backup.timer factorio-status.service"   # enabled in the user session
 
 # The host uid that container uid $CONTAINER_UID maps to: the account's first subuid + $CONTAINER_UID - 1.
 mapped_id() {  # $1 = /etc/subuid or /etc/subgid
@@ -78,6 +80,16 @@ import_save() {
   say "Imported. Start it with: sudo -u $U $H/bin/factorio-apply"
 }
 
+install_home_files() {  # scripts, compose file, user units -> $H (never secrets.env, never the game data)
+  say "Files in $H"
+  install -d -o "$U" -g "$U" -m 700 "$H/.config" "$H/.config/factorio" "$H/backups"
+  install -d -o "$U" -g "$U" -m 755 "$H/bin" "$H/generated"
+  while IFS= read -r f; do
+    rel=${f#"$REPO/files/home/"}; rel=${rel/#config\//.config/}; mode=644; [ "${rel%%/*}" = bin ] && mode=755
+    install -D -o "$U" -g "$U" -m "$mode" "$f" "$H/$rel"
+  done < <(find "$REPO/files/home" -type f)
+}
+
 install_host() {
   say "Firewall (own nftables table; Docker's rules untouched)"
   install -d -m 755 /etc/factorio
@@ -92,6 +104,9 @@ install_host() {
   systemctl is-enabled --quiet nftables.service 2>/dev/null && \
     warn "nftables.service is enabled: its /etc/nftables.conf runs 'flush ruleset' at boot and wipes Docker's rules. Disable it."
 
+  say "/run/factorio for the player-count file (F13)"
+  systemd-tmpfiles --create /etc/tmpfiles.d/factorio-status.conf
+
   say "Root tools in /usr/local/sbin"
   for f in $SBIN_FILES; do install -o root -g root -m 755 "$REPO/files/usr/local/sbin/$f" "/usr/local/sbin/$f"; done
 }
@@ -102,6 +117,12 @@ case "${1:-}" in
            id "$U" >/dev/null 2>&1 || die "run 'sudo $0' first"; import_save "$2"; exit 0 ;;
   host)    [ "$(id -u)" -eq 0 ] || die "run with sudo"; id "$U" >/dev/null 2>&1 || die "run 'sudo $0' first"
            install_host; say "Done (game server not restarted)."; exit 0 ;;
+  update)  [ "$(id -u)" -eq 0 ] || die "run with sudo"; id "$U" >/dev/null 2>&1 || die "run 'sudo $0' first"
+           install_home_files; install_host
+           as_user systemctl --user daemon-reload
+           as_user systemctl --user enable --now $USER_UNITS
+           as_user systemctl --user restart factorio-status.service
+           say "Done: scripts, user services, firewall updated (Docker and the game server not restarted)."; exit 0 ;;
   "")      ;;
   *)       die "unknown argument: $1" ;;
 esac
@@ -132,13 +153,7 @@ loginctl enable-linger "$U"
 for _ in $(seq 30); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
 [ -S "/run/user/$uid/bus" ] || die "the user session for $U didn't start"
 
-say "Files in $H"
-install -d -o "$U" -g "$U" -m 700 "$H/.config" "$H/.config/factorio" "$H/backups"
-install -d -o "$U" -g "$U" -m 755 "$H/bin" "$H/generated"
-while IFS= read -r f; do
-  rel=${f#"$REPO/files/home/"}; rel=${rel/#config\//.config/}; mode=644; [ "${rel%%/*}" = bin ] && mode=755
-  install -D -o "$U" -g "$U" -m "$mode" "$f" "$H/$rel"
-done < <(find "$REPO/files/home" -type f)
+install_home_files
 chown -R "$U:$U" "$H/.config"
 if [ ! -f "$H/.config/factorio/secrets.env" ]; then
   install -o "$U" -g "$U" -m 600 "$REPO/secrets.env.example" "$H/.config/factorio/secrets.env"
@@ -161,7 +176,7 @@ fi
 as_user systemctl --user daemon-reload
 as_user systemctl --user enable docker.service >/dev/null 2>&1
 as_user systemctl --user restart docker.service
-as_user systemctl --user enable --now factorio-update.timer factorio-backup.timer
+as_user systemctl --user enable --now $USER_UNITS
 
 install_host
 

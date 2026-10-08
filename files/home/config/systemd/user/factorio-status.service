@@ -1,0 +1,10 @@
+[Unit]
+Description=Factorio: publish the online player count for the media server's torrent throttle (F13)
+
+[Service]
+ExecStart=%h/bin/factorio-status
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

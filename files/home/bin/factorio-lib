@@ -9,5 +9,5 @@ dc() { docker compose -f "$HOME/compose.yml" --env-file "$SECRETS" "$@"; }
 log() { echo "$*"; }
 # Number of players online, or empty if the server isn't answering.
 players_online() {
-  docker exec factorio rcon /players online 2>/dev/null | sed -n 's/^Online players (\([0-9]*\)).*/\1/p' | head -1
+  timeout 30 docker exec factorio rcon /players online 2>/dev/null | sed -n 's/^Online players (\([0-9]*\)).*/\1/p' | head -1
 }
