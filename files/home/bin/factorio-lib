@@ -7,7 +7,16 @@ export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 dc() { docker compose -f "$HOME/compose.yml" --env-file "$SECRETS" "$@"; }
 log() { echo "$*"; }
+# Raw "/players online" answer: "Online players (N):" then "  <name> (online)" per player. Empty if no answer.
+players_online_raw() {
+  timeout 30 docker exec factorio rcon /players online 2>/dev/null
+}
+# Number of players online (from a raw answer on stdin), or empty if there was no answer.
+players_count() { sed -n 's/^Online players (\([0-9]*\)).*/\1/p' | head -1; }
+# Names of the players online (from a raw answer on stdin), one per line. Factorio names are letters,
+# digits, "_", "-" and "."; anything else is dropped, so a name can never break the JSON written from it.
+players_names() { sed -n 's/^  *\([A-Za-z0-9_.-]\{1,60\}\) (online)$/\1/p'; }
 # Number of players online, or empty if the server isn't answering.
 players_online() {
-  timeout 30 docker exec factorio rcon /players online 2>/dev/null | sed -n 's/^Online players (\([0-9]*\)).*/\1/p' | head -1
+  players_online_raw | players_count
 }

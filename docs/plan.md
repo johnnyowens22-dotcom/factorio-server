@@ -21,6 +21,7 @@ repo is `johnnyowens22-dotcom/streambox`; it only records that this exists (its 
 | F11 | 2026-10-07 | **`sudo factorio-report`** (`/usr/local/sbin`, installed by `install.sh`): server status, everyone who has ever joined (`/players`), refused connections grouped by IP/name/reason (container log, since its last start), the firewall counters with a verdict (output counter > 0 = ALERT), DNS record vs home IP, newest backup. On demand only. | User asked how to spot unwanted traffic. On demand, not pushed (streambox D15). Firewall drop logging was offered and not taken. |
 | F12 | 2026-10-07 | **`non_blocking_saving: true`.** The server forks to write autosaves, so players don't freeze while it saves. Takes effect at the next restart (the settings file is read at startup); `install.sh` now rebuilds the settings before it restarts the account's Docker. | User's choice. Server-side only: with `autosave_only_on_server` the players' PCs (one is Windows) don't save anyway, and Wube's own note says Windows clients' autosaving is disabled with it on. Wube still calls it highly experimental; the daily + pre-update backups are the fallback. Saves were ~1 MB when enabled, so the gain grows with the base. |
 | F13 | 2026-10-07 | **Player-count status file for the media server's torrent throttle** (built 2026-10-07; streambox D63). A `factorio-status` user service (no root, `files/home/bin/factorio-status`) runs `players_online()` (now with a 30 s timeout) every 60 s and atomically writes `/run/factorio/online` (`players=N at=<epoch>`, world-readable; `/run/factorio` from a `tmpfiles.d` entry in `install.sh`). The media server reads only that file (streambox `docs/11-factorio-throttle.md`, its D63, amends D57). Installed without restarting the game by the new `sudo ./install.sh update`. | The user wants torrents throttled while anyone plays. One published file is the smallest link: the media side never runs anything in this account, and nothing here needs root. RCON count over log parsing or packet counting: exact, can't be faked from the internet, and `factorio-update` already depends on it. |
+| F14 | 2026-10-08 | **Player names for the media server's dashboard** (streambox D67, `docs/13-dashboard.md`). `factorio-status` now makes **one** RCON call per minute and writes both files from it: `/run/factorio/online` (F13, format unchanged, the torrent throttle reads it) and **`/run/factorio/players.json`** (`{"at":<epoch>,"players":N,"online":[names]}`, world-readable). Names are kept only if they are 1–60 of `A–Z a–z 0–9 _ - .` (Factorio's own rule), so a name can't break the JSON; `players` still counts everyone. Same staleness rule as F13: no answer → no write. Installed with `sudo ./install.sh update` (no game restart). | User wants to see who's playing (and, once the dashboard has HTTPS, a push alert when someone joins). Same one-way link as F13: a file this account publishes, read by the media side; nothing there reaches in. One RCON call for both keeps FG17's log noise unchanged. Names are friends' Factorio usernames: if the dashboard is ever reachable from outside the LAN, decide then whether this section is shown. |
 
 ## Open questions
 
@@ -45,7 +46,8 @@ factorio-ddns ─HTTPS─► Cloudflare API (updates factorio.howoldismoose.com 
 | `/home/factorio/generated/` | `server-settings.json`, `server-adminlist.json`, built from secrets by `factorio-settings` |
 | `/home/factorio/data/` | the game's folder (`saves`, `mods`, `config`), owned by the container's subuid |
 | `/home/factorio/backups/` | save copies |
-| `/home/factorio/bin/` | `factorio-apply`, `-update`, `-backup`, `-docker`, `-settings`, `-lib` |
+| `/home/factorio/bin/` | `factorio-apply`, `-update`, `-backup`, `-docker`, `-settings`, `-lib`, `-status` |
+| `/run/factorio/online`, `/run/factorio/players.json` | published for the media server: player count (F13, torrent throttle) and names (F14, dashboard); world-readable, rewritten every 60 s |
 | `~/.config/systemd/user/` | `docker.service` (rootless daemon), `factorio-update.timer`, `factorio-backup.timer` |
 | `/etc/factorio/firewall.nft`, `factorio-firewall.service` | host firewall |
 
@@ -85,6 +87,8 @@ NVMe space, the home upload link, the LAN IP and router, the journal, and unatte
 6. ✅ 2026-10-07 Streambox repo: D19 amended ("except UDP 34197 for Factorio").
 7. ⏳ Reboot test while watching: firewall, rootless Docker (linger) and both containers come back by themselves. Check the first 03:30 backup exists in `/home/factorio/backups`.
 8. ✅ 2026-10-07 F13 installed (`install.sh update`), first throttled session verified on the media side; FG18 firewall installed (`install.sh host`; output chain now `meta skuid 1001 jump from_factorio`). Originally: F13: `sudo ~/factorio-server/install.sh update` (no game restart; save any `ALERT6` firewall log lines first, the firewall reloads), then check `cat /run/factorio/online` shows `players=0 at=…` within a minute. The media side goes live with streambox `sudo host/install.sh` (its docs/11).
+
+9. ⏳ F14 (player names): `sudo ~/factorio-server/install.sh update` (no game restart), then `cat /run/factorio/players.json` shows `{"at":…,"players":0,"online":[]}` within a minute.
 
 ## Operating it (all as you, with sudo)
 
