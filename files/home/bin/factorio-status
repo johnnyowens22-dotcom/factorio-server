@@ -3,7 +3,7 @@
 # Runs as the factorio user service factorio-status.service: every 60 s, ask the server over RCON (the same
 # query factorio-update relies on) and atomically replace
 #   /run/factorio/online        "players=N at=<epoch>"                      (F13, read by the torrent throttle)
-#   /run/factorio/players.json  {"at":<epoch>,"players":N,"online":[names]} (F14, read by the dashboard)
+#   /run/factorio/players.json  {"at":<epoch>,"players":N,"online":[names],"mem":{...}} (F14 + F16 memory, dashboard)
 # Both come from one RCON call. No answer (server stopped, starting or updating) -> nothing is written and the
 # files go stale, which the media side reads as "nobody playing". Every RCON call logs one line in the server
 # log (FG17): keep 60 s.
@@ -18,7 +18,8 @@ while :; do
     ''|*[!0-9]*) ;;
     *) now=$(date +%s)
        names=$(printf '%s\n' "$raw" | players_names | sed 's/.*/"&"/' | paste -sd, -)
-       printf '{"at":%s,"players":%s,"online":[%s]}\n' "$now" "$n" "$names" > "$JSON.tmp" && mv -f "$JSON.tmp" "$JSON"
+       mem=$(mem_json)
+       printf '{"at":%s,"players":%s,"online":[%s]%s}\n' "$now" "$n" "$names" "${mem:+,$mem}" > "$JSON.tmp" && mv -f "$JSON.tmp" "$JSON"
        printf 'players=%s at=%s\n' "$n" "$now" > "$OUT.tmp" && mv -f "$OUT.tmp" "$OUT" ;;
   esac
   sleep 60

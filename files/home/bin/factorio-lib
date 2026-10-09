@@ -16,6 +16,23 @@ players_count() { sed -n 's/^Online players (\([0-9]*\)).*/\1/p' | head -1; }
 # Names of the players online (from a raw answer on stdin), one per line. Factorio names are letters,
 # digits, "_", "-" and "."; anything else is dropped, so a name can never break the JSON written from it.
 players_names() { sed -n 's/^  *\([A-Za-z0-9_.-]\{1,60\}\) (online)$/\1/p'; }
+# F16: the game container's memory as a JSON fragment ("mem":{...}), from its cgroup (the kernel's own accounting:
+# memory.peak and memory.events catch even a sub-second autosave spike). Empty if the container isn't running.
+container_id() { docker inspect -f '{{.Id}}' factorio 2>/dev/null; }
+mem_json() {
+  cid=$(container_id) || return 0
+  case "$cid" in ''|*[!0-9a-f]*) return 0 ;; esac
+  u=$(id -u)
+  d=$(ls -d "${CGROUP_ROOT:-/sys/fs/cgroup}/user.slice/user-$u.slice/user@$u.service/"*"/docker-$cid.scope" 2>/dev/null | head -1)
+  [ -n "$d" ] && [ -r "$d/memory.stat" ] || return 0
+  num() { case "$1" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac; }   # "max" (no limit) and junk -> null
+  anon=$(awk '$1=="anon"{print $2}' "$d/memory.stat"); file=$(awk '$1=="file"{print $2}' "$d/memory.stat")
+  emax=$(awk '$1=="max"{print $2}' "$d/memory.events"); okill=$(awk '$1=="oom_kill"{print $2}' "$d/memory.events")
+  printf '"mem":{"anon":%s,"file":%s,"swap":%s,"max":%s,"swap_max":%s,"peak":%s,"events_max":%s,"oom_kill":%s}' \
+    "$(num "$anon")" "$(num "$file")" "$(num "$(cat "$d/memory.swap.current" 2>/dev/null)")" \
+    "$(num "$(cat "$d/memory.max")")" "$(num "$(cat "$d/memory.swap.max" 2>/dev/null)")" \
+    "$(num "$(cat "$d/memory.peak" 2>/dev/null)")" "$(num "$emax")" "$(num "$okill")"
+}
 # Number of players online, or empty if the server isn't answering.
 players_online() {
   players_online_raw | players_count
