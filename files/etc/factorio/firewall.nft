@@ -20,6 +20,10 @@ table inet factorio_guard {
     meta l4proto ipv6-icmp accept
     udp dport 34197 accept comment "Factorio"
     meta pkttype { broadcast, multicast } accept comment "local only: the router never forwards these from the internet"
+    # Known noise (FG20): a Ring device's DNS lookups to 1.1.1.1, whose replies the router's hardware NAT hands to this
+    # box. Still dropped and logged, but counted apart so they don't raise the "traffic from outside" warning.
+    ip saddr 1.1.1.1 udp sport 53 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " level info
+    ip saddr 1.1.1.1 udp sport 53 counter drop comment "known noise: misdelivered DNS replies (FG20)"
     limit rate 6/minute burst 5 packets log prefix "factorio_guard drop: " level info
     counter drop comment "new traffic from outside the LAN"
   }

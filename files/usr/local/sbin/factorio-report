@@ -108,23 +108,24 @@ def firewall():
         if not rule:
             continue
         chain = "output" if rule["chain"] == "from_factorio" else rule["chain"]   # FG18: the checks live there
-        kind = "stray" if "stray" in rule.get("comment", "") else chain
+        comment = rule.get("comment", "")
+        kind = "stray" if "stray" in comment else "known" if "known noise" in comment else chain   # FG15, FG20
         for e in rule["expr"]:
             if "counter" in e:
                 counts[kind] += e["counter"]["packets"]
     inbound = counts["input"] + counts["forward"]
     verdict = "alert" if counts["output"] else "inbound" if inbound else "ok"
-    return {"loaded": True, "stray": counts["stray"], "inbound": inbound, "output": counts["output"],
+    return {"loaded": True, "stray": counts["stray"], "known": counts["known"], "inbound": inbound, "output": counts["output"],
             "verdict": verdict, "drops": recent_drops()}
 
 
 def recent_drops():
     """Last few logged drops since boot (the firewall logs at most ~6 a minute)."""
-    r = run(["journalctl", "-k", "-b", "--no-pager", "-o", "short-iso", "-g", "factorio_guard (drop|ALERT)"])
+    r = run(["journalctl", "-k", "-b", "--no-pager", "-o", "short-iso", "-g", "factorio_guard (drop|known|ALERT)"])
     out = []
     for l in [l for l in r.stdout.splitlines() if "factorio_guard" in l][-8:]:
         f = dict(kv.split("=", 1) for kv in l.split() if "=" in kv)
-        out.append({"at": l[:16].replace("T", " "), "kind": "ALERT" if "ALERT" in l else "drop",
+        out.append({"at": l[:16].replace("T", " "), "kind": "ALERT" if "ALERT" in l else "known" if "guard known" in l else "drop",
                     "src": f.get("SRC", "?"), "dst": f.get("DST", "?"), "proto": f.get("PROTO", "?"),
                     "port": f.get("DPT", "-"),
                     "dir": "out " + f["OUT"] if f.get("OUT") else "in " + (f.get("IN") or "-"),
@@ -196,6 +197,7 @@ def text(d):
         print(f"{RED}table factorio_guard is NOT loaded: run systemctl status factorio-firewall{END}")
     else:
         print(f"stray packets dropped (late replies, harmless):        {fw['stray']}")
+        print(f"known noise (allowlisted, still logged, FG20):        {fw['known']} packet(s)")
         print(f"new connections from outside the LAN, not Factorio:   {fw['inbound']} packet(s)")
         print(f"factorio account trying to reach the LAN/this box:    {fw['output']} packet(s)")
         if fw["drops"]:
