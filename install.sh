@@ -24,8 +24,9 @@ render() {
   sed -e "s|@LAN@|$LAN|g" -e "s|@ROUTER@|$ROUTER|g" -e "s|@FACTORIO_UID@|$uid|g" "$REPO/files/etc/$1"
 }
 ETC_FILES="factorio/firewall.nft systemd/system/factorio-firewall.service tmpfiles.d/factorio-status.conf
-           systemd/system/factorio-report.service systemd/system/factorio-report.timer tmpfiles.d/factorio-report.conf"
-SBIN_FILES="factorio-report"           # files/usr/local/sbin/ -> /usr/local/sbin/ (root, 755)
+           systemd/system/factorio-report.service systemd/system/factorio-report.timer tmpfiles.d/factorio-report.conf
+           systemd/system/factorio-offcopy.service systemd/system/factorio-offcopy.timer"
+SBIN_FILES="factorio-report factorio-offcopy"   # files/usr/local/sbin/ -> /usr/local/sbin/ (root, 755)
 USER_UNITS="factorio-update.timer factorio-backup.timer factorio-status.service"   # enabled in the user session
 
 # The host uid that container uid $CONTAINER_UID maps to: the account's first subuid + $CONTAINER_UID - 1.
@@ -115,6 +116,10 @@ install_host() {
   systemd-tmpfiles --create /etc/tmpfiles.d/factorio-report.conf
   systemctl enable --now factorio-report.timer >/dev/null 2>&1
   systemctl start factorio-report.service || warn "factorio-report.service failed: journalctl -u factorio-report"
+
+  say "Save backups copied to the media server's pool daily at 03:50 (F18)"
+  systemctl enable --now factorio-offcopy.timer >/dev/null 2>&1
+  systemctl start factorio-offcopy.service || warn "factorio-offcopy.service failed: journalctl -u factorio-offcopy"
 }
 
 case "${1:-}" in

@@ -1,0 +1,42 @@
+#!/bin/sh
+# Copy the save backups off the NVMe to the media server's pool (F18, closes O1). Root, daily at 03:50 (after the
+# 03:30 backup), from factorio-offcopy.timer. One way only: reads /home/factorio/backups, never writes there; the
+# factorio account gets no access to the pool. On the pool the copies are covered by SnapRAID parity (streambox D77).
+#   - copies each save-*.zip not already on the pool (.part, compared, then renamed): never --delete, so a wiped or
+#     corrupted ~/backups can't take the pool copies with it
+#   - keeps pool copies for 90 days, and always at least the newest 30
+#   - does nothing (and fails) if the pool isn't mounted: writing to /mnt/storage then would fill the NVMe under it
+set -eu
+SRC=/home/factorio/backups
+POOL=/mnt/storage
+DEST=$POOL/backups/factorio
+KEEP_DAYS=90
+KEEP_MIN=30
+log() { logger -t factorio-offcopy "$*"; echo "$*"; }
+
+[ "$(findmnt -n -o FSTYPE "$POOL" 2>/dev/null)" = fuse.mergerfs ] || { log "ERROR: $POOL is not mounted (mergerfs): nothing copied"; exit 1; }
+[ -d "$POOL/backups" ] || { log "ERROR: $POOL/backups missing: nothing copied"; exit 1; }
+[ -d "$SRC" ] || { log "no $SRC yet: nothing to copy"; exit 0; }
+# root:<group of the backups folder>, 2750: the media server's user can read (copy a save to a PC), not write
+install -d -m 2750 -o root -g "$(stat -c %g "$POOL/backups")" "$DEST"
+
+n=0
+for f in "$SRC"/save-*.zip; do
+  [ -f "$f" ] || continue
+  b=$(basename "$f")
+  [ -f "$DEST/$b" ] && continue
+  [ -z "$(find "$f" -mtime +$KEEP_DAYS)" ] || continue    # past the pool's limit: would be pruned again tonight
+  cp -p "$f" "$DEST/$b.part"
+  if cmp -s "$f" "$DEST/$b.part"; then
+    chown root:"$(stat -c %g "$DEST")" "$DEST/$b.part"; chmod 640 "$DEST/$b.part"
+    mv "$DEST/$b.part" "$DEST/$b"; n=$((n + 1))
+  else
+    rm -f "$DEST/$b.part"; log "ERROR: $b differs after copying: removed, will retry next run"; exit 1
+  fi
+done
+
+old=$(ls -1t "$DEST"/save-*.zip 2>/dev/null | tail -n +$((KEEP_MIN + 1)) | while read -r f; do
+  [ -n "$(find "$f" -mtime +$KEEP_DAYS)" ] && echo "$f"; done)
+[ -z "$old" ] || echo "$old" | xargs -r rm -f
+rm -f "$DEST"/*.part
+log "copied $n new save(s); $(ls -1 "$DEST"/save-*.zip 2>/dev/null | wc -l) on the pool, removed $(printf '%s' "$old" | grep -c . || true) older than $KEEP_DAYS days"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Factorio: copy the save backups to the media server's pool (F18)
+Documentation=https://github.com/johnnyowens22-dotcom/factorio-server
+# Not RequiresMountsFor=/mnt/storage: the script checks the pool itself and fails loudly when it's missing
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/factorio-offcopy
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min

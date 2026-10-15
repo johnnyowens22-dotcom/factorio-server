@@ -1,7 +1,7 @@
 # factorio-server
 
 Factorio (Space Age + mods) server for a few friends, on the StreamBox media server, isolated from it:
-own account, own rootless Docker daemon, own firewall table, own secrets and backups.
+own account, own rootless Docker daemon, own firewall table, own secrets and backups (copied daily to the media server's pool, F18).
 
 **Status (2026-10-07):** running and reachable from the internet (UDP 34197). Left: reboot test, first 03:30 backup. See the build order in [docs/plan.md](docs/plan.md).
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Factorio: copy the save backups to the pool daily at 03:50 (F18)
+
+[Timer]
+# After the 03:30 backup (F10), before the media server's 04:00 maintenance
+OnCalendar=*-*-* 03:50
+Persistent=true
+
+[Install]
+WantedBy=timers.target

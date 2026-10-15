@@ -142,14 +142,27 @@ def dns():
     return {"host": HOSTNAME, "records": rec, "home": home, "match": home in rec}
 
 
+POOL_COPIES = "/mnt/storage/backups/factorio"   # F18: factorio-offcopy's destination
+
+
 def backups():
     d = os.path.join(pwd.getpwnam(USER).pw_dir, "backups")
     files = sorted((f for f in os.listdir(d) if f.endswith(".zip")), reverse=True) if os.path.isdir(d) else []
     if not files:
         return {"count": 0}
     newest = os.path.join(d, files[0])
-    return {"count": len(files), "newest": files[0], "size_mb": os.path.getsize(newest) // 1048576,
-            "at": datetime.datetime.fromtimestamp(os.path.getmtime(newest)).strftime("%Y-%m-%d %H:%M")}
+    b = {"count": len(files), "newest": files[0], "size_mb": os.path.getsize(newest) // 1048576,
+         "at": datetime.datetime.fromtimestamp(os.path.getmtime(newest)).strftime("%Y-%m-%d %H:%M")}
+    # F18: copies on the media server's pool. behind_h = how much older the pool's newest copy is than the newest
+    # backup here (0 = up to date; no copies = the newest backup's age), for the dashboard's "not copied" alert.
+    p = POOL_COPIES
+    pool = sorted((f for f in os.listdir(p) if f.startswith("save-") and f.endswith(".zip")), reverse=True) \
+        if os.path.isdir(p) else []
+    t_local = os.path.getmtime(newest)
+    t_pool = os.path.getmtime(os.path.join(p, pool[0])) if pool else None
+    b["pool"] = {"count": len(pool), "newest": pool[0] if pool else None,
+                 "behind_h": round(max(0, t_local - t_pool) / 3600 if t_pool else (time.time() - t_local) / 3600, 1)}
+    return b
 
 
 def collect(want_online):
@@ -225,6 +238,14 @@ def text(d):
         print(f"{YEL}none yet (daily at 03:30){END}")
     else:
         print(f"{b['count']} kept; newest {b['newest']} ({b['size_mb']} MB, {b['at']})")
+        pl = b.get("pool") or {}
+        if pl.get("behind_h", 0) > 48:
+            print(f"{YEL}pool copies: {pl.get('count', 0)}, newest {pl.get('newest') or 'none'}, "
+                  f"{pl['behind_h']:.0f} h behind (journalctl -u factorio-offcopy){END}")
+        elif not pl.get("count"):
+            print(f"pool copies: none yet (daily at 03:50, {POOL_COPIES})")
+        else:
+            print(f"pool copies: {pl['count']} in {POOL_COPIES}, newest {pl['newest']}")
 
 
 if __name__ == "__main__":
