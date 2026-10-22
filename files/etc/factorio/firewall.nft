@@ -56,6 +56,12 @@ table inet factorio_guard {
   chain from_factorio {
     ct state established,related accept
     ip daddr @ROUTER@ meta l4proto { tcp, udp } th dport 53 accept
+    # Known noise (FG21): while the router is off the box has no DNS server, and Go programs (rootless Docker, the DNS
+    # updater) then ask 127.0.0.1 / ::1 port 53. Nothing listens there; still rejected and logged, counted apart.
+    ip daddr 127.0.0.0/8 meta l4proto { tcp, udp } th dport 53 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " flags skuid level info
+    ip daddr 127.0.0.0/8 meta l4proto { tcp, udp } th dport 53 counter reject comment "known noise: DNS fallback to this box while the router is down (FG21)"
+    ip6 daddr ::1 meta l4proto { tcp, udp } th dport 53 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " flags skuid level info
+    ip6 daddr ::1 meta l4proto { tcp, udp } th dport 53 counter reject comment "known noise: DNS fallback to this box while the router is down (FG21)"
     ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } limit rate 6/minute burst 5 packets log prefix "factorio_guard ALERT: " flags skuid level warn
     ip daddr { 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } counter reject comment "factorio account -> LAN/host"
     ip6 daddr { ::1, fc00::/7, fe80::/10 } limit rate 6/minute burst 5 packets log prefix "factorio_guard ALERT: " flags skuid level warn

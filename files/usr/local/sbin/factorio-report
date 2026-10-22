@@ -109,7 +109,7 @@ def firewall():
             continue
         chain = "output" if rule["chain"] == "from_factorio" else rule["chain"]   # FG18: the checks live there
         comment = rule.get("comment", "")
-        kind = "stray" if "stray" in comment else "known" if "known noise" in comment else chain   # FG15, FG20
+        kind = "stray" if "stray" in comment else "known" if "known noise" in comment else chain   # FG15, FG20, FG21
         for e in rule["expr"]:
             if "counter" in e:
                 counts[kind] += e["counter"]["packets"]
@@ -210,7 +210,7 @@ def text(d):
         print(f"{RED}table factorio_guard is NOT loaded: run systemctl status factorio-firewall{END}")
     else:
         print(f"stray packets dropped (late replies, harmless):        {fw['stray']}")
-        print(f"known noise (allowlisted, still logged, FG20):        {fw['known']} packet(s)")
+        print(f"known noise (allowlisted, still logged, FG20/FG21):  {fw['known']} packet(s)")
         print(f"new connections from outside the LAN, not Factorio:   {fw['inbound']} packet(s)")
         print(f"factorio account trying to reach the LAN/this box:    {fw['output']} packet(s)")
         if fw["drops"]:
