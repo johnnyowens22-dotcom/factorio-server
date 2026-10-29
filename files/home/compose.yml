@@ -29,7 +29,7 @@ services:
       USERNAME: ${FACTORIO_USERNAME:?set in secrets.env}
       TOKEN: ${FACTORIO_TOKEN:?set in secrets.env}
     stop_grace_period: 120s          # a big Space Age save takes longer than Docker's default 10 s (F9)
-    mem_limit: 6g                    # the media server keeps the rest of the RAM
+    mem_limit: 10g                   # the media server keeps the rest of the RAM (F22: 31 GB box)
     pids_limit: 512
 
   ddns:
