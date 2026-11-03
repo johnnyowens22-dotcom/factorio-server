@@ -30,6 +30,11 @@ table inet factorio_guard {
     # box. Still dropped and logged, but counted apart so they don't raise the "traffic from outside" warning.
     ip saddr 1.1.1.1 udp sport 53 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " level info
     ip saddr 1.1.1.1 udp sport 53 counter drop comment "known noise: misdelivered DNS replies (FG20)"
+    # Known noise (FG23, streambox G152): the owner's phone/Mac at home with Tailscale on also tries the box's public
+    # endpoint; the router bounces it back in (hairpin) with the home's own public IP as source. Still dropped (Tailscale
+    # uses the direct LAN path instead), counted apart so it doesn't raise the warning. Port fixed by streambox compose.
+    udp dport 41641 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " level info
+    udp dport 41641 counter drop comment "known noise: Tailscale hairpin to the home's public IP (FG23)"
     limit rate 6/minute burst 5 packets log prefix "factorio_guard drop: " level info
     counter drop comment "new traffic from outside the LAN"
   }
