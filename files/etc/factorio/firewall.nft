@@ -35,6 +35,11 @@ table inet factorio_guard {
     # uses the direct LAN path instead), counted apart so it doesn't raise the warning. Port fixed by streambox compose.
     udp dport 41641 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " level info
     udp dport 41641 counter drop comment "known noise: Tailscale hairpin to the home's public IP (FG23)"
+    # Known noise (FG25): after a reboot or a Gluetun restart the old VPN server keeps sending WireGuard packets
+    # (source port 51820) to the tunnel's previous port for a few seconds; the box has forgotten that connection, so
+    # they land here. Still dropped and logged, counted apart. A WireGuard packet can't open anything on this box.
+    udp sport 51820 limit rate 6/minute burst 5 packets log prefix "factorio_guard known: " level info
+    udp sport 51820 counter drop comment "known noise: WireGuard from the old VPN server after a reconnect (FG25)"
     # FG24: a TCP packet without a fresh SYN can't start a connection. Late replies to a closed outbound connection
     # (an HTTPS server's ACK/PSH after the box hung up) are picked up by conntrack's loose tracking as "new", not
     # "invalid", so they reached the drop below and raised the warning. Still dropped, counted as stray.
