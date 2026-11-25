@@ -1,0 +1,110 @@
+#!/usr/bin/python3 -I
+"""Stub `docker` for tests/test-update.sh: just enough of images, tags, two containers and RCON, kept in
+$STUB_STATE/state.json. Every call is appended to $STUB_STATE/calls.log."""
+import json, os, re, sys
+
+D = os.environ["STUB_STATE"]
+P = os.path.join(D, "state.json")
+st = json.load(open(P))
+a = sys.argv[1:]
+open(os.path.join(D, "calls.log"), "a").write(" ".join(a) + "\n")
+
+
+def save():
+    json.dump(st, open(P, "w"), indent=1)
+
+
+def ref(r):  # tag or id -> id
+    if r in st["images"]:
+        return r
+    return st["tags"].get(r)
+
+
+def fmt(f, img):
+    if f == "{{.Id}}":
+        return img_id
+    m = re.fullmatch(r'\{\{index \.Config\.Labels "([^"]+)"\}\}', f)
+    if m:
+        return st["images"][img].get("labels", {}).get(m.group(1), "<no value>")
+    if f == "{{index .RepoDigests 0}}":
+        return st["images"][img]["digest"]
+    sys.exit(f"stub: unknown format {f}")
+
+
+if a[:2] == ["image", "inspect"]:
+    img_id = ref(a[-1])
+    if not img_id:
+        sys.exit(1)
+    print(fmt(a[3], img_id))
+elif a[0] == "inspect":
+    c = st["containers"].get(a[-1])
+    if not c:
+        sys.exit(1)
+    print({"{{.Image}}": c["image"], "{{.State.Running}}": "true" if c["running"] else "false"}[a[2]])
+elif a[0] == "pull":
+    if st.get("hub_down"):
+        sys.exit(1)
+    st["tags"][a[-1]] = st["hub"][a[-1]]
+    save()
+elif a[0] == "build":
+    if st.get("build_fail"):
+        print("#7 ERROR: sha256sum: WARNING: 1 computed checksum did NOT match\nERROR: failed to solve", file=sys.stderr)
+        sys.exit(1)
+    bargs, labels, tag = {}, {}, None
+    for i, v in enumerate(a):
+        if v == "--build-arg":
+            k, val = a[i + 1].split("=", 1); bargs[k] = val
+        elif v == "--label":
+            k, val = a[i + 1].split("=", 1); labels[k] = val
+        elif v == "-t":
+            tag = a[i + 1]
+    assert bargs["SHA256"] == st["sha"][bargs["VERSION"]], "wrong checksum passed"
+    assert "@sha256:" in bargs["BASE"], "base not pinned"
+    st["n"] += 1
+    new = f"sha256:{st['n']:04d}"
+    st["images"][new] = {"labels": dict(labels, **{"factorio.version": bargs["VERSION"]})}
+    st["tags"][tag] = new
+    st["builds"].append(bargs["VERSION"])
+    save()
+    print(new)
+elif a[0] == "tag":
+    st["tags"][a[2]] = ref(a[1])
+    save()
+elif a[0] == "rmi":
+    for t in a[1:]:
+        i = ref(t)
+        if any(c["image"] == i for c in st["containers"].values()) and t == i:
+            sys.exit(1)
+        if t in st["tags"]:
+            del st["tags"][t]
+        elif t in st["images"]:
+            for k in [k for k, v in st["tags"].items() if v == t]:
+                del st["tags"][k]
+    save()
+elif a[:2] == ["image", "ls"]:
+    repo = a[-1]
+    tags = [t for t in st["tags"] if t.split(":")[0] == repo]
+    print("\n".join(st["tags"][t] if "-q" in a else t for t in tags))
+elif a[:2] in (["image", "prune"], ["builder", "prune"]):
+    pass
+elif a[0] == "exec" and a[-1] == "/server-save":  # factorio-backup asks for a save, then waits for a newer file
+    os.utime(os.path.join(os.environ["FACTORIO_TEST_HOME"], "data/saves/world.zip"))
+elif a[0] == "exec":
+    p = st.get("players")
+    if p is None:
+        sys.exit(1)
+    print(f"Online players ({p}):")
+elif a[0] == "compose":
+    rest = a[a.index("--env-file") + 2:]
+    if rest[:2] == ["up", "-d"]:
+        svcs = [x for x in rest[2:] if not x.startswith("-")] or ["factorio", "ddns"]
+        if "factorio" in svcs:
+            cur = st["tags"].get("factorio-local:current")
+            if not cur:
+                print("No such image: factorio-local:current", file=sys.stderr)
+                sys.exit(1)
+            st["containers"]["factorio"] = {"image": cur, "running": True}
+            st["restarts"] += 1
+        save()
+else:
+    sys.exit(f"stub: unhandled {a}")

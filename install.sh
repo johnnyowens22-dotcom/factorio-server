@@ -86,6 +86,7 @@ install_home_files() {  # scripts, compose file, user units -> $H (never secrets
   say "Files in $H"
   install -d -o "$U" -g "$U" -m 700 "$H/.config" "$H/.config/factorio" "$H/backups"
   install -d -o "$U" -g "$U" -m 755 "$H/bin" "$H/generated"
+  rm -rf "$H/image"   # the image recipe (F26) is replaced whole, so a file dropped from the repo goes too
   while IFS= read -r f; do
     rel=${f#"$REPO/files/home/"}; rel=${rel/#config\//.config/}; mode=644; [ "${rel%%/*}" = bin ] && mode=755
     install -D -o "$U" -g "$U" -m "$mode" "$f" "$H/$rel"
@@ -141,7 +142,7 @@ esac
 
 say "Packages"
 missing=""
-for p in slirp4netns uidmap dbus-user-session docker-ce-rootless-extras; do
+for p in slirp4netns uidmap dbus-user-session docker-ce-rootless-extras docker-buildx-plugin curl; do
   dpkg -s "$p" >/dev/null 2>&1 || missing="$missing $p"
 done
 [ -z "$missing" ] || { apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $missing; }

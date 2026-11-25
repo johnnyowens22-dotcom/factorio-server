@@ -1,8 +1,10 @@
 [Unit]
-Description=Factorio: follow the stable release when nobody is playing
+Description=Factorio: build + follow the stable release when nobody is playing (F5, F26)
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
 ExecStart=%h/bin/factorio-update
+# a oneshot has no timeout by default: a hung build would stop the timer from ever firing again (F26)
+TimeoutStartSec=45min

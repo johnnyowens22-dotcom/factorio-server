@@ -13,8 +13,10 @@ x-hardening: &hardening
 services:
   factorio:
     <<: *hardening
-    # Follows factorio.com's stable release = Steam's default branch (F5). Never `latest`: that's experimental.
-    image: factoriotools/factorio:stable-rootless
+    # Built on this box from factorio.com's stable release = Steam's default branch (F5, F26: factorio-update
+    # builds factorio-local:<version> from ~/image and moves :current; docs/self-built-image.md). Never pulled.
+    image: factorio-local:current
+    pull_policy: never
     container_name: factorio
     ports:
       - "34197:34197/udp"            # the only published port; RCON stays inside the container

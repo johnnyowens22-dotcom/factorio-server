@@ -1,0 +1,33 @@
+#!/bin/sh
+# F26 (docs/self-built-image.md): go back to the previous game image and hold automatic updates.
+#   sudo -u factorio /home/factorio/bin/factorio-rollback            swap current <-> previous, hold, restart
+#   sudo -u factorio /home/factorio/bin/factorio-rollback --release  drop the hold; the next update run (<= 15 min)
+#                                                                    moves to factorio.com's stable again
+set -eu
+. "$(dirname "$0")/factorio-lib"
+exec 9>"$XDG_RUNTIME_DIR/factorio-image.lock"
+flock -w 3000 9
+case "${1:-}" in
+  --release) rm -f "$HOLD"; echo "Hold released: the next factorio-update run (within 15 min) follows stable again."; exit 0 ;;
+  '') ;;
+  *) echo "usage: factorio-rollback [--release]" >&2; exit 2 ;;
+esac
+cur=$(img_id "$IMG:current"); prev=$(img_id "$IMG:previous")
+[ -n "$prev" ] || { echo "No previous image to go back to." >&2; exit 1; }
+cv=$(img_label "$IMG:current" factorio.version); pv=$(img_label "$IMG:previous" factorio.version)
+n=$(players_online)
+case "$n" in ''|0) ;; *) echo "$n player(s) online: ask them to leave first." >&2; exit 1 ;; esac
+"$(dirname "$0")/factorio-backup" pre-rollback
+docker tag "$prev" "$IMG:current"
+docker tag "$cur" "$IMG:previous"
+echo "rolled back from $cv to $pv on $(date '+%Y-%m-%d %H:%M')" > "$HOLD"
+dc up -d factorio
+echo "Now running $pv (was $cv). Automatic updates are held until: factorio-rollback --release"
+if [ "$cv" != "$pv" ]; then
+  echo
+  echo "The game version went DOWN. Saves written by $cv won't load in $pv, so the server will refuse to start"
+  echo "on the newest autosave. Restore the last save from before the update (progress since then is lost):"
+  echo "  sudo ls -t /home/factorio/backups/ | grep pre-update | head -3"
+  echo "  copy that zip into a new empty folder DIR, then: sudo ~/factorio-server/install.sh import DIR"
+  echo "  and: sudo -u factorio /home/factorio/bin/factorio-apply"
+fi

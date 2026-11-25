@@ -1,10 +1,11 @@
 # Shared by the factorio-* scripts (sourced). Talks to this account's rootless Docker daemon only.
-HOME=$(getent passwd "$(id -un)" | cut -d: -f6); export HOME
+# FACTORIO_TEST_HOME / FACTORIO_TEST_BIN: only tests/test-update.sh sets them (a fake home, stub docker + curl).
+HOME=${FACTORIO_TEST_HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}; export HOME
 cd "$HOME"   # sudo -u keeps the caller's folder, which this account may not enter
 SECRETS="$HOME/.config/factorio/secrets.env"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="${FACTORIO_TEST_BIN:+$FACTORIO_TEST_BIN:}/usr/bin:/bin:/usr/sbin:/sbin"
 dc() { docker compose -f "$HOME/compose.yml" --env-file "$SECRETS" "$@"; }
 log() { echo "$*"; }
 # Raw "/players online" answer: "Online players (N):" then "  <name> (online)" per player. Empty if no answer.
@@ -37,3 +38,35 @@ mem_json() {
 players_online() {
   players_online_raw | players_count
 }
+
+# ---- F26 (docs/self-built-image.md): the game image is built here from factorio.com's stable release.
+IMG=factorio-local                                   # factorio-local:<version>, :current (compose runs it), :previous
+BASE_REF=debian:trixie-slim                          # Debian base of the recipe in ~/image (pinned by digest per build)
+STATE_DIR="$HOME/.local/state/factorio"
+HOLD="$HOME/.config/factorio/hold"                   # written by factorio-rollback: no automatic updates while it exists
+UPDATE_JSON=${FACTORIO_UPDATE_OUT:-/run/factorio/update.json}
+img_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
+img_label() { docker image inspect -f "{{index .Config.Labels \"$2\"}}" "$1" 2>/dev/null | sed 's/^<no value>$//' || true; }
+valid_version() { printf '%s' "$1" | grep -Eq '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$'; }
+version_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]; }
+# "<version> <sha256>" of factorio.com's stable headless server (= Steam's default branch), or failure.
+stable_release() {
+  v=$(curl -fsS --max-time 30 https://factorio.com/api/latest-releases \
+      | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["stable"]["headless"])' 2>/dev/null) || return 1
+  valid_version "$v" || return 1
+  s=$(curl -fsS --max-time 30 https://factorio.com/download/sha256sums/ \
+      | awk -v f="factorio-headless_linux_$v.tar.xz" '$2 == f {print $1; exit}') || return 1
+  printf '%s' "$s" | grep -Eq '^[0-9a-f]{64}$' || return 1
+  echo "$v $s"
+}
+# The Debian base as an exact digest. Docker Hub is asked at most once a day (anonymous pulls are rate-limited);
+# if it can't be reached, the copy already here is used.
+base_digest() {
+  if [ -z "$(img_id "$BASE_REF")" ] || [ -z "$(find "$STATE_DIR/base-checked" -mmin -1440 2>/dev/null)" ]; then
+    docker pull -q "$BASE_REF" >/dev/null 2>&1 && touch "$STATE_DIR/base-checked"
+  fi
+  d=$(docker image inspect -f '{{index .RepoDigests 0}}' "$BASE_REF" 2>/dev/null) || return 1
+  case "$d" in *@sha256:*) echo "$d" ;; *) return 1 ;; esac
+}
+# A short hash of the recipe in ~/image: a changed recipe (an upstream fix copied in) rebuilds by itself.
+recipe_hash() { (cd "$HOME/image" && find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-16); }

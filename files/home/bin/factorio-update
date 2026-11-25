@@ -1,24 +1,113 @@
 #!/bin/sh
-# Every 15 min (factorio-update.timer): pull the stable image; if it changed, back up and restart the
-# server, but only while nobody is playing (F5). The DNS updater is refreshed whenever it changes.
+# Every 15 min (factorio-update.timer). F26 (docs/self-built-image.md): build the game image here from
+# factorio.com's stable release and switch to it only while nobody is playing (F5). Also refreshes the DNS updater.
+#   factorio-update               the timer's run
+#   factorio-update --build-only  build stable and make it current, start nothing (factorio-apply: first start)
+# Every run writes /run/factorio/update.json for the media server's dashboard (streambox D183).
 set -eu
 . "$(dirname "$0")/factorio-lib"
-running_image() { docker inspect -f '{{.Image}}' "$1" 2>/dev/null || true; }
-tag_image() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
-dc pull -q || { log "pull failed (offline?); trying again next run"; exit 0; }
+mode=${1:-}
+case "$mode" in ''|--build-only) ;; *) echo "usage: factorio-update [--build-only]" >&2; exit 2 ;; esac
+mkdir -p "$STATE_DIR"
+[ -f "$STATE_DIR/ok_at" ] || date +%s > "$STATE_DIR/ok_at"   # the "behind since" clock starts with this updater
+exec 9>"$XDG_RUNTIME_DIR/factorio-image.lock"
+if [ "$mode" = --build-only ]; then flock -w 3000 9; else flock -n 9 || { log "image busy (apply/rollback running)"; exit 0; }; fi
 
-if [ "$(running_image factorio-ddns)" != "$(tag_image favonia/cloudflare-ddns:1)" ]; then
-  dc up -d ddns && log "DNS updater updated"
-fi
-
-[ "$(running_image factorio)" = "$(tag_image factoriotools/factorio:stable-rootless)" ] && exit 0
-ls "$HOME/data/saves"/*.zip >/dev/null 2>&1 || { log "no save imported yet; not starting the server"; exit 0; }
-if [ "$(docker inspect -f '{{.State.Running}}' factorio 2>/dev/null)" = true ]; then
+state=ok; detail=""; stable=""
+running=$(img_label "$IMG:current" factorio.version)
+# update.json: {at, stable, running, ok_at (last time the server ran stable), state, detail}
+publish() {
+  now=$(date +%s)
+  [ -n "$running" ] && [ "$running" = "$stable" ] && [ ! -f "$HOLD" ] && echo "$now" > "$STATE_DIR/ok_at"
+  [ -d "$(dirname "$UPDATE_JSON")" ] || return 0
+  python3 -I - "$UPDATE_JSON" "$now" "$stable" "$running" "$(cat "$STATE_DIR/ok_at")" "$state" "$detail" <<'PY'
+import json, os, sys
+out, at, stable, running, ok_at, state, detail = sys.argv[1:]
+d = {"at": int(at), "stable": stable or None, "running": running or None,
+     "ok_at": int(ok_at) if ok_at.isdigit() else 0, "state": state, "detail": detail[:300]}
+with open(out + ".tmp", "w") as f:
+    json.dump(d, f)
+os.chmod(out + ".tmp", 0o644)
+os.replace(out + ".tmp", out)
+PY
+}
+# stop here: write the status. The timer's run always ends 0 (the next run retries); --build-only fails if there's
+# no image to start.
+finish() { publish; if [ -n "$mode" ] && [ -z "$(img_id "$IMG:current")" ]; then exit 1; fi; exit 0; }
+nobody_playing() {
+  [ "$(docker inspect -f '{{.State.Running}}' factorio 2>/dev/null)" = true ] || return 0
   n=$(players_online)
-  [ -n "$n" ] || { log "new Factorio version waiting: server not answering RCON yet"; exit 0; }
-  [ "$n" = 0 ] || { log "new Factorio version waiting: $n player(s) online"; exit 0; }
+  [ -n "$n" ] || { detail="server not answering RCON"; return 1; }
+  [ "$n" = 0 ] || { detail="$n player(s) online"; return 1; }
+}
+
+if [ -z "$mode" ]; then   # the DNS updater: pulled image, recreated when it changed (only it: the game image is local)
+  if dc pull -q ddns >/dev/null 2>&1; then
+    [ "$(docker inspect -f '{{.Image}}' factorio-ddns 2>/dev/null)" = "$(img_id favonia/cloudflare-ddns:1)" ] \
+      || { dc up -d ddns && log "DNS updater updated"; }
+  fi
 fi
-"$(dirname "$0")/factorio-backup" pre-update
-dc up -d factorio
-log "Factorio updated to $(docker image inspect -f '{{index .Config.Labels "factorio.version"}}' factoriotools/factorio:stable-rootless 2>/dev/null || echo 'new image')"
-docker image prune -f >/dev/null 2>&1 || true
+
+if [ -f "$HOLD" ] && [ -n "$running" ]; then
+  state=held; detail="held at $running by factorio-rollback: $(head -c 200 "$HOLD")"; finish
+fi
+rel=$(stable_release) || { state=check-failed; detail="couldn't read the stable version and checksum from factorio.com"; log "$detail"; finish; }
+stable=${rel% *}; sha=${rel#* }
+base=$(base_digest) || { state=check-failed; detail="no Debian base image ($BASE_REF): Docker Hub unreachable?"; log "$detail"; finish; }
+recipe=$(recipe_hash)
+
+target=""; why=""
+if [ -z "$running" ]; then target=$stable; why="first self-built image"
+elif version_gt "$stable" "$running"; then target=$stable; why="new stable release"
+elif version_gt "$running" "$stable"; then
+  state="stable-older"; detail="factorio.com's stable ($stable) is older than the server ($running): not downgrading by itself"
+elif [ "$(img_label "$IMG:current" factorio-server.base)" != "$base" ]; then target=$running; why="Debian base updated"
+elif [ "$(img_label "$IMG:current" factorio-server.recipe)" != "$recipe" ]; then target=$running; why="image recipe changed"
+fi
+
+want=$(img_id "$IMG:current")
+if [ -n "$target" ]; then
+  if [ "$(img_label "$IMG:$target" factorio-server.base)" != "$base" ] \
+     || [ "$(img_label "$IMG:$target" factorio-server.recipe)" != "$recipe" ]; then
+    # build only while nobody plays: a few CPU-heavy minutes would stutter the game
+    if [ -z "$mode" ] && ! nobody_playing; then state=waiting; detail="$target ($why) waits to be built: $detail"; log "$detail"; finish; fi
+    avail=$(df -Pk "$HOME" | awk 'NR == 2 {print $4}')
+    if [ "${avail:-0}" -lt 3145728 ]; then state=build-failed; detail="less than 3 GB free for the build"; log "$detail"; finish; fi
+    log "building Factorio $target ($why; $base)"
+    if ! out=$(docker build -q -f "$HOME/image/Dockerfile.rootless" --build-arg BASE="$base" \
+          --build-arg VERSION="$target" --build-arg SHA256="$sha" --label factorio-server.base="$base" \
+          --label factorio-server.recipe="$recipe" -t "$IMG:$target" "$HOME/image" 2>&1); then
+      docker builder prune -af >/dev/null 2>&1 || true
+      state=build-failed; detail="building $target failed: $(printf '%s' "$out" | tail -n 3 | tr '\n' ' ' | tail -c 250)"
+      log "$detail"; finish
+    fi
+    docker builder prune -af >/dev/null 2>&1 || true
+    log "built Factorio $target"
+  fi
+  want=$(img_id "$IMG:$target")
+fi
+[ -n "$want" ] || { state=build-failed; detail="no game image"; finish; }
+
+if [ "$mode" = --build-only ]; then
+  docker tag "$IMG:${target:-current}" "$IMG:current"; running=$(img_label "$IMG:current" factorio.version); finish
+fi
+if [ "$(docker inspect -f '{{.Image}}' factorio 2>/dev/null)" != "$want" ]; then
+  ls "$HOME/data/saves"/*.zip >/dev/null 2>&1 || { detail="no save imported yet; not starting the server"; finish; }
+  nobody_playing || { state=waiting; detail="${target:-$running} is ready, waiting: $detail"; log "$detail"; finish; }
+  "$(dirname "$0")/factorio-backup" pre-update
+  if [ -n "$target" ]; then
+    [ -n "$(img_id "$IMG:current")" ] && docker tag "$IMG:current" "$IMG:previous"
+    docker tag "$IMG:$target" "$IMG:current"
+  fi
+  dc up -d factorio
+  running=$(img_label "$IMG:current" factorio.version)
+  log "Factorio now runs $running${why:+ ($why)}"
+  # tidy: version tags other than current/previous, old upstream images, dangling layers
+  keep="$(img_id "$IMG:current") $(img_id "$IMG:previous")"
+  for t in $(docker image ls --format '{{.Repository}}:{{.Tag}}' "$IMG"); do
+    case " $keep " in *" $(img_id "$t") "*) ;; *) docker rmi "$t" >/dev/null 2>&1 || true ;; esac
+  done
+  docker image ls -q factoriotools/factorio | xargs -r docker rmi >/dev/null 2>&1 || true
+  docker image prune -f >/dev/null 2>&1 || true
+fi
+finish

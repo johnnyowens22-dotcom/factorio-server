@@ -1,0 +1,16 @@
+#!/usr/bin/python3 -I
+"""Stub `curl` for tests/test-update.sh: factorio.com's release API and checksum list from $STUB_STATE/state.json."""
+import json, os, sys
+
+st = json.load(open(os.path.join(os.environ["STUB_STATE"], "state.json")))
+url = sys.argv[-1]
+if st.get("fz_down"):
+    sys.exit(7)
+if url.endswith("/api/latest-releases"):
+    print(json.dumps({"stable": {"headless": st["stable"]}, "experimental": {"headless": "9.9.9"}}))
+elif url.endswith("/download/sha256sums/"):
+    for v, s in st["sha"].items():
+        print(f"{s}  factorio-headless_linux_{v}.tar.xz")
+        print(f"{'e' * 64}  factorio_linux_{v}.tar.xz")
+else:
+    sys.exit(22)
